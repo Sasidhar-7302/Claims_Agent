@@ -100,7 +100,90 @@ graph LR
 
 ---
 
+## Email Classification (Triage)
+
+Every incoming email is classified into one of three categories using LLM analysis:
+
+| Category | Description | Action |
+|----------|-------------|--------|
+| **CLAIM** | Valid warranty claim request | Proceed to extraction and analysis |
+| **NON_CLAIM** | Product inquiry, general question | Optionally draft helpful response, then archive |
+| **SPAM** | Promotional, phishing, or irrelevant | Archive immediately |
+
+**Classification Signals:**
+- Mentions of product defects, malfunctions, or issues → CLAIM
+- Requests for product information, recommendations → NON_CLAIM
+- Promotional language, suspicious links, unrelated content → SPAM
+
+---
+
+## Claim Validation Logic
+
+Claims are validated using a **3-layer approach** combining deterministic rules and LLM reasoning:
+
+### Layer 1: Warranty Window Check (Deterministic)
+```
+IF purchase_date is missing → NEED_INFO
+IF (today - purchase_date) > 90 days → REJECT (warranty expired)
+ELSE → Continue to next layer
+```
+
+### Layer 2: Exclusion Keywords (Deterministic)
+The system scans the email body for policy-specific exclusion triggers:
+
+| Exclusion Type | Example Keywords | Result |
+|----------------|------------------|--------|
+| **Water Damage** | "water", "liquid", "spill", "bath" | REJECT |
+| **Commercial Use** | "salon", "commercial", "business" | REJECT |
+| **Physical Damage** | "dropped", "cracked", "broken screen" | REJECT |
+| **Unauthorized Repair** | "opened", "modified", "third-party" | REJECT |
+
+> **Note:** Exclusion keywords are loaded from `data/policies/index.json` per product.
+
+### Layer 3: LLM Analysis (Reasoning)
+For claims that pass deterministic checks, the LLM analyzes:
+- **Issue Description**: Is this a manufacturing defect or user error?
+- **Policy Excerpts**: Does the reported issue fall under coverage?
+- **Evidence Provided**: Is there proof of purchase, serial number, photos?
+
+**Output Structure:**
+```json
+{
+  "recommendation": "APPROVE | REJECT | NEED_INFO",
+  "confidence": 0.0 - 1.0,
+  "facts": ["Purchased Jan 10, 2026", "Serial: PS3K-2025-78542"],
+  "assumptions": ["Customer used product as intended"],
+  "reasoning": "Defect appears to be manufacturing-related..."
+}
+```
+
+---
+
+## Key Assumptions
+
+| Assumption | Rationale |
+|------------|-----------|
+| **3-month warranty window** | Standard warranty period for all HairTech products |
+| **One product per email** | Simplifies extraction; multi-product claims would need human triage |
+| **Purchase date from email body** | We do NOT use the email sent date as purchase date |
+| **Attachments are mocked** | OCR not implemented; attachment names indicate proof exists |
+| **Serial number required** | Essential for warranty verification |
+| **US-based returns** | Return labels assume domestic shipping |
+
+---
+
+## What Triggers Each Decision
+
+| Decision | Conditions |
+|----------|------------|
+| **APPROVE** | Within warranty + No exclusions + Valid defect + Has proof |
+| **REJECT** | Warranty expired OR Exclusion matched OR Ineligible issue |
+| **NEED_INFO** | Missing: serial number, purchase date, proof of purchase, or detailed description |
+
+---
+
 ## UI Highlights
+
 - Inbox dashboard with KPI cards
 - Human review packet with facts, assumptions, and reasoning
 - Email dispatch screen with editable draft
