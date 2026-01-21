@@ -1,0 +1,95 @@
+{
+  "products": [
+    {
+      "product_id": "HD-PRO-001",
+      "name": "ProStyle 3000",
+      "aliases": ["prostyle", "prostyle 3000", "pro style 3000", "hd-pro-001", "professional 3000"],
+      "category": "professional",
+      "policy_file": "policy_prostyle_3000.txt",
+      "price": 149.99
+    },
+    {
+      "product_id": "HD-PRO-002",
+      "name": "ProStyle 5000",
+      "aliases": ["prostyle 5000", "pro style 5000", "hd-pro-002", "professional 5000"],
+      "category": "professional",
+      "policy_file": "policy_prostyle_5000.txt",
+      "price": 199.99
+    },
+    {
+      "product_id": "HD-TRV-001",
+      "name": "TravelMate Compact",
+      "aliases": ["travelmate", "travel mate", "compact dryer", "hd-trv-001", "travel dryer"],
+      "category": "travel",
+      "policy_file": "policy_travelmate_compact.txt",
+      "price": 49.99
+    },
+    {
+      "product_id": "HD-TRV-002",
+      "name": "TravelMate Pro",
+      "aliases": ["travelmate pro", "travel mate pro", "hd-trv-002", "travel pro"],
+      "category": "travel",
+      "policy_file": "policy_travelmate_pro.txt",
+      "price": 79.99
+    },
+    {
+      "product_id": "HD-SLN-001",
+      "name": "SalonElite 7000",
+      "aliases": ["salonelite", "salon elite", "salon elite 7000", "hd-sln-001", "elite 7000"],
+      "category": "salon",
+      "policy_file": "policy_salonelite_7000.txt",
+      "price": 299.99
+    },
+    {
+      "product_id": "HD-SLN-002",
+      "name": "SalonElite 9000",
+      "aliases": ["salonelite 9000", "salon elite 9000", "hd-sln-002", "elite 9000"],
+      "category": "salon",
+      "policy_file": "policy_salonelite_9000.txt",
+      "price": 399.99
+    },
+    {
+      "product_id": "HD-ECO-001",
+      "name": "EcoBreeze",
+      "aliases": ["ecobreeze", "eco breeze", "hd-eco-001", "eco dryer", "green dryer"],
+      "category": "eco-friendly",
+      "policy_file": "policy_ecobreeze.txt",
+      "price": 89.99
+    },
+    {
+      "product_id": "HD-KDS-001",
+      "name": "KiddieGlow",
+      "aliases": ["kiddieglow", "kiddie glow", "kids dryer", "hd-kds-001", "children dryer"],
+      "category": "kids",
+      "policy_file": "policy_kiddieglow.txt",
+      "price": 39.99
+    },
+    {
+      "product_id": "HD-ION-001",
+      "name": "IonFlow 2000",
+      "aliases": ["ionflow", "ion flow", "ionic dryer", "hd-ion-001", "ionflow 2000"],
+      "category": "ionic",
+      "policy_file": "policy_ionflow_2000.txt",
+      "price": 129.99
+    },
+    {
+      "product_id": "HD-QCK-001",
+      "name": "QuickDry Express",
+      "aliases": ["quickdry", "quick dry", "express dryer", "hd-qck-001", "quickdry express"],
+      "category": "express",
+      "policy_file": "policy_quickdry_express.txt",
+      "price": 69.99
+    }
+  ],
+  "warranty_period_months": 3,
+  "company_name": "HairTech Industries",
+  "support_email": "warranty@hairtechind.com",
+  "return_address": {
+    "name": "HairTech Industries Returns",
+    "street": "1234 Innovation Drive",
+    "city": "San Jose",
+    "state": "CA",
+    "zip": "95134",
+    "country": "USA"
+  }
+}

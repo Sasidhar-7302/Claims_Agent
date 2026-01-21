@@ -1,0 +1,13 @@
+{
+    "email_id": "claim_010",
+    "from": "james.wilson@email.com",
+    "to": "warranty@hairtechind.com",
+    "subject": "Warranty Question",
+    "date": "2026-01-06T09:00:00Z",
+    "body": "Hello,\n\nI bought a SalonElite 9000 and the ionic feature seems weaker than before. I run a salon and we use it heavily.\n\nNot sure if this is covered. Let me know what info you need.\n\nJames Wilson\n890 Commerce Blvd\nLos Angeles, CA 90001",
+    "attachments": [],
+    "metadata": {
+        "expected_outcome": "NEED_INFO",
+        "reason": "Missing: purchase date, serial number, proof of purchase, detailed problem description"
+    }
+}

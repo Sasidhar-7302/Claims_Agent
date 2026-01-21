@@ -1,0 +1,15 @@
+{
+    "email_id": "claim_006",
+    "from": "robert.taylor@gmail.com",
+    "to": "warranty@hairtechind.com",
+    "subject": "QuickDry Express overheating problem",
+    "date": "2026-01-10T08:55:00Z",
+    "body": "To whom it may concern,\n\nI purchased the QuickDry Express on November 28, 2025. Serial: QDE-2025-67432.\n\nThe dryer keeps shutting off after about 5 minutes of use. I believe the overheat protection is malfunctioning because it happens even when the vents are completely clear.\n\nI've followed all the maintenance guidelines - cleaning the filter after each use and allowing cool-down periods.\n\nReceipt from Walmart attached.\n\nRobert Taylor\n888 Elm Street\nPhoenix, AZ 85001\n602-555-0129",
+    "attachments": [
+        "walmart_receipt.pdf"
+    ],
+    "metadata": {
+        "expected_outcome": "APPROVE",
+        "reason": "Overheat protection sensor failure is covered"
+    }
+}

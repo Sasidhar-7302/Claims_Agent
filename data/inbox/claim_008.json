@@ -1,0 +1,15 @@
+{
+    "email_id": "claim_008",
+    "from": "marcus.brown@gmail.com",
+    "to": "warranty@hairtechind.com",
+    "subject": "Warranty claim - EcoBreeze handle cracked",
+    "date": "2026-01-08T10:15:00Z",
+    "body": "Hello HairTech,\n\nI purchased the EcoBreeze dryer on June 15, 2025 from Target. I love the eco-friendly design!\n\nUnfortunately, the bamboo handle has developed a crack along its length. I haven't dropped it or mishandled it - the crack just appeared.\n\nI'm concerned it might break completely. Serial: EB-2025-23456.\n\nI still have my receipt. Happy to recycle the defective unit.\n\nMarcus Brown\n567 Green Lane\nBoulder, CO 80301\n720-555-0134",
+    "attachments": [
+        "target_receipt.pdf"
+    ],
+    "metadata": {
+        "expected_outcome": "REJECT",
+        "reason": "Purchase date June 2025 is outside 3-month warranty window (over 6 months old)"
+    }
+}

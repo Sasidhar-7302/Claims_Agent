@@ -1,0 +1,13 @@
+{
+    "email_id": "claim_009",
+    "from": "lisa.martinez@outlook.com",
+    "to": "warranty@hairtechind.com",
+    "subject": "Hair dryer problem",
+    "date": "2026-01-07T15:30:00Z",
+    "body": "Hi,\n\nMy hair dryer is broken. I think it's one of your products - it says HairTech on it.\n\nPlease help!\n\nLisa",
+    "attachments": [],
+    "metadata": {
+        "expected_outcome": "NEED_INFO",
+        "reason": "Missing: product model, purchase date, serial number, contact address, description of issue"
+    }
+}

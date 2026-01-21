@@ -1,0 +1,15 @@
+{
+    "email_id": "claim_001",
+    "from": "sarah.johnson@email.com",
+    "to": "warranty@hairtechind.com",
+    "subject": "ProStyle 3000 stopped working - Warranty Claim",
+    "date": "2026-01-15T10:30:00Z",
+    "body": "Hello,\n\nI purchased a ProStyle 3000 hair dryer on November 20, 2025 from Amazon. The order number is 112-4567890-1234567.\n\nLast week, the dryer suddenly stopped working. When I turn it on, nothing happens - no heat, no fan, no lights. I've tried different outlets and it's definitely not a power issue.\n\nI've been very careful with the dryer and only use it at home for personal use about 3 times a week.\n\nThe serial number is PS3K-2025-78542.\n\nPlease let me know how to proceed with a warranty claim.\n\nThank you,\nSarah Johnson\n123 Oak Street\nAustin, TX 78701\nPhone: 512-555-0142",
+    "attachments": [
+        "receipt_amazon_112-4567890.pdf"
+    ],
+    "metadata": {
+        "expected_outcome": "APPROVE",
+        "reason": "Within warranty period, manufacturing defect, has proof of purchase"
+    }
+}

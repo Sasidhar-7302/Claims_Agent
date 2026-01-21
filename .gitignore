@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project generated artifacts
+outbox/review_packets/*.md
+outbox/emails/*.txt
+outbox/labels/*.pdf
+outbox/labels/*.txt
+outbox/logs/*.json
+outbox/*_summary.txt
+outbox/claims.db
+outbox/sent/
+outbox/
+!outbox/.gitkeep
+
+# Local Databases
+.chroma/
+data/chroma_db/
+data/inbox_processed.json
+
+# Logs
+logs/
+*.log
+
+# Reports (Keep final checks, ignore temps)
+# reports/*.md
+# !reports/report.md
+# !reports/final_validation.md

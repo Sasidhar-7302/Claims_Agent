@@ -1,0 +1,13 @@
+{
+    "email_id": "claim_013",
+    "from": "karen.white@email.com",
+    "to": "warranty@hairtechind.com",
+    "subject": "Best shampoo recommendations?",
+    "date": "2026-01-03T14:20:00Z",
+    "body": "Hello HairTech,\n\nI recently bought one of your hair dryers and I love it! Quick question - do you have any recommendations for shampoos that would work well with the ionic technology?\n\nAlso, do you sell any hair styling products?\n\nThanks!\nKaren",
+    "attachments": [],
+    "metadata": {
+        "expected_outcome": "NON_CLAIM",
+        "reason": "Product inquiry, not a warranty claim"
+    }
+}

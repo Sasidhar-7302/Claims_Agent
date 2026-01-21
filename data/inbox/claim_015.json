@@ -1,0 +1,15 @@
+{
+    "email_id": "claim_015",
+    "from": "patricia.garcia@gmail.com",
+    "to": "warranty@hairtechind.com",
+    "subject": "ProStyle 3000 used at my salon - needs repair",
+    "date": "2026-01-01T10:00:00Z",
+    "body": "Hello,\n\nI've been using my ProStyle 3000 at my home salon for the past month. I see about 5-6 clients a day. The motor burned out yesterday.\n\nPurchased December 10, 2025 from Amazon. Serial: PS3K-2025-99887.\n\nOrder confirmation attached.\n\nPatricia Garcia\n432 Salon Street\nHouston, TX 77001\n713-555-0167",
+    "attachments": [
+        "amazon_confirmation.pdf"
+    ],
+    "metadata": {
+        "expected_outcome": "REJECT",
+        "reason": "ProStyle 3000 is for home use only, commercial/salon use is explicitly excluded"
+    }
+}

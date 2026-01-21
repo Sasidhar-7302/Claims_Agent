@@ -1,0 +1,13 @@
+{
+    "email_id": "claim_014",
+    "from": "support@fakehairtech.scam",
+    "to": "warranty@hairtechind.com",
+    "subject": "URGENT: Your account has been compromised",
+    "date": "2026-01-02T23:15:00Z",
+    "body": "URGENT SECURITY ALERT\n\nDear HairTech Customer,\n\nWe have detected unusual activity on your account. Your warranty registration is at risk!\n\nClick the link below to verify your account immediately:\nhttp://fakehairtech-verify.scam/login\n\nYou must act within 24 hours or your warranty will be CANCELLED.\n\nEnter your:\n- Full name\n- Address\n- Credit card number\n- Social Security Number\n\nHairTech Security Team",
+    "attachments": [],
+    "metadata": {
+        "expected_outcome": "SPAM",
+        "reason": "Phishing attempt, fraudulent email"
+    }
+}

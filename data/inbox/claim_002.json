@@ -1,0 +1,16 @@
+{
+    "email_id": "claim_002",
+    "from": "mike.chen@gmail.com",
+    "to": "warranty@hairtechind.com",
+    "subject": "SalonElite 7000 motor noise issue",
+    "date": "2026-01-14T14:22:00Z",
+    "body": "Hi HairTech team,\n\nI run a small hair salon called 'Mike's Cuts' and purchased the SalonElite 7000 on December 5, 2025. We use it for about 6 hours a day on clients.\n\nFor the past week, the motor has been making a grinding noise and the heat output seems reduced. It's affecting our ability to serve clients efficiently.\n\nSerial number: SE7K-2025-91234\nOrder confirmation from your website attached.\n\nBusiness info:\nMike's Cuts\n456 Main Street\nSan Francisco, CA 94102\nBusiness License: SF-2024-88901\n\nPlease help ASAP!\n\nMike Chen\n415-555-0198",
+    "attachments": [
+        "order_confirmation.pdf",
+        "business_license.pdf"
+    ],
+    "metadata": {
+        "expected_outcome": "APPROVE",
+        "reason": "Professional use within limits, motor defect is covered, has business license"
+    }
+}

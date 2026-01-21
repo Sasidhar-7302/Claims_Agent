@@ -1,0 +1,13 @@
+{
+    "email_id": "claim_007",
+    "from": "amanda.lee@email.com",
+    "to": "warranty@hairtechind.com",
+    "subject": "ProStyle 5000 digital display not working",
+    "date": "2026-01-09T13:40:00Z",
+    "body": "Hi there,\n\nI got the ProStyle 5000 as a Christmas gift on December 25, 2025. The digital display stopped showing the temperature after just 2 weeks of use.\n\nThe dryer itself still works fine, but I can't see what temperature I'm using which defeats the purpose of the smart features.\n\nSerial number: PS5K-2025-43210\n\nI don't have the receipt since it was a gift, but my mom bought it from your official website.\n\nCan you look up the order with the serial number?\n\nAmanda Lee\n234 River Road\nPortland, OR 97201\n503-555-0188",
+    "attachments": [],
+    "metadata": {
+        "expected_outcome": "APPROVE",
+        "reason": "Display defect covered, can verify via serial number"
+    }
+}

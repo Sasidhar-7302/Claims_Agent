@@ -1,0 +1,13 @@
+{
+    "email_id": "claim_011",
+    "from": "nancy.thomas@gmail.com",
+    "to": "warranty@hairtechind.com",
+    "subject": "TravelMate Pro issue on vacation",
+    "date": "2026-01-05T12:45:00Z",
+    "body": "Hi,\n\nI bought the TravelMate Pro sometime in December. I'm currently in Paris and the dryer stopped working. Not sure what happened.\n\nCan I get it fixed here or do I need to wait until I'm back home?\n\nThanks,\nNancy Thomas",
+    "attachments": [],
+    "metadata": {
+        "expected_outcome": "NEED_INFO",
+        "reason": "Missing: exact purchase date, serial number, proof of purchase, US address, specific issue description"
+    }
+}

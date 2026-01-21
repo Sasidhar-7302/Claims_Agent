@@ -1,0 +1,15 @@
+{
+    "email_id": "claim_005",
+    "from": "emily.davis@email.com",
+    "to": "warranty@hairtechind.com",
+    "subject": "KiddieGlow dryer issue",
+    "date": "2026-01-11T11:20:00Z",
+    "body": "Hello,\n\nWe bought the KiddieGlow hair dryer for our 7-year-old daughter on December 20, 2025. She loves the lights and sounds!\n\nHowever, my daughter accidentally dropped it in the bathtub while it was off. Now it won't turn on at all. The water got inside.\n\nI know accidents happen with kids but is there anything you can do? Serial number is KG-2025-12890.\n\nEmily Davis\n555 Maple Court\nDenver, CO 80202\n303-555-0156",
+    "attachments": [
+        "amazon_order.pdf"
+    ],
+    "metadata": {
+        "expected_outcome": "REJECT",
+        "reason": "Water damage/bath use is explicitly excluded for this product"
+    }
+}

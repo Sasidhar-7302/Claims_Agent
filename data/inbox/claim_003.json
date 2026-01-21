@@ -1,0 +1,15 @@
+{
+    "email_id": "claim_003",
+    "from": "jennifer.williams@outlook.com",
+    "to": "warranty@hairtechind.com",
+    "subject": "Damaged TravelMate Compact",
+    "date": "2026-01-13T09:15:00Z",
+    "body": "Hello,\n\nI bought the TravelMate Compact for a trip to Europe. I purchased it on October 1, 2025.\n\nDuring my flight back, my checked luggage was mishandled and the hair dryer case was crushed. The folding mechanism is now broken and won't lock in place.\n\nI understand this might not be covered but wanted to check. Serial: TMC-2025-55678.\n\nReceipt attached.\n\nJennifer Williams\n789 Beach Drive\nMiami, FL 33139\n305-555-0277",
+    "attachments": [
+        "target_receipt.jpg"
+    ],
+    "metadata": {
+        "expected_outcome": "REJECT",
+        "reason": "Damage from airline baggage handling is explicitly excluded"
+    }
+}

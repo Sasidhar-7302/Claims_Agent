@@ -1,0 +1,13 @@
+{
+    "email_id": "claim_012",
+    "from": "promo@dealstore.net",
+    "to": "warranty@hairtechind.com",
+    "subject": "EXCLUSIVE OFFER: Wholesale Hair Dryers 70% OFF!!!",
+    "date": "2026-01-04T02:30:00Z",
+    "body": "AMAZING DEALS!\n\nDear Business Owner,\n\nWe have received your contact from our marketing database. We are offering WHOLESALE PRICES on professional hair styling equipment!\n\n- Premium Hair Dryers - $15 each (min order 100)\n- Styling Tools Package - $50 each\n- FREE SHIPPING on orders over $500\n\nContact us NOW at sales@dealstore.net\n\nLimited time offer! Act fast!\n\nBest regards,\nDealStore Marketing Team\n\nTo unsubscribe, click here: http://bit.ly/unsub12345",
+    "attachments": [],
+    "metadata": {
+        "expected_outcome": "SPAM",
+        "reason": "Promotional spam email, not a warranty claim"
+    }
+}

@@ -1,0 +1,13 @@
+{
+    "email_id": "claim_004",
+    "from": "david.park@yahoo.com",
+    "to": "warranty@hairtechind.com",
+    "subject": "IonFlow 2000 - ions not working",
+    "date": "2026-01-12T16:45:00Z",
+    "body": "Hi,\n\nMy IonFlow 2000 (serial IF2K-2025-34521) that I bought in early December 2025 is not producing ions anymore. The ion indicator light stays off even when the ionic function is turned on.\n\nI've been cleaning the filter every week and haven't used any heavy hair products near it.\n\nI bought it on December 3, 2025 from Best Buy. I can provide the receipt if needed.\n\nDavid Park\n321 Pine Avenue\nSeattle, WA 98101\ndavid.park@yahoo.com\n206-555-0183",
+    "attachments": [],
+    "metadata": {
+        "expected_outcome": "APPROVE",
+        "reason": "Ionic generator defect is covered, maintenance followed"
+    }
+}

@@ -1,0 +1,15 @@
+{"email_id": "claim_001", "expected_triage": "CLAIM", "expected_outcome": "APPROVE", "product_id": "HD-PRO-001", "reason": "Within warranty, manufacturing defect"}
+{"email_id": "claim_002", "expected_triage": "CLAIM", "expected_outcome": "APPROVE", "product_id": "HD-SLN-001", "reason": "Professional use within limits, motor defect covered"}
+{"email_id": "claim_003", "expected_triage": "CLAIM", "expected_outcome": "REJECT", "product_id": "HD-TRV-001", "reason": "Airline baggage damage excluded"}
+{"email_id": "claim_004", "expected_triage": "CLAIM", "expected_outcome": "APPROVE", "product_id": "HD-ION-001", "reason": "Ionic generator defect covered"}
+{"email_id": "claim_005", "expected_triage": "CLAIM", "expected_outcome": "REJECT", "product_id": "HD-KDS-001", "reason": "Water damage excluded"}
+{"email_id": "claim_006", "expected_triage": "CLAIM", "expected_outcome": "APPROVE", "product_id": "HD-QCK-001", "reason": "Sensor malfunction covered"}
+{"email_id": "claim_007", "expected_triage": "CLAIM", "expected_outcome": "NEED_INFO", "product_id": "HD-PRO-002", "reason": "No receipt - gift without proof of purchase"}
+{"email_id": "claim_008", "expected_triage": "CLAIM", "expected_outcome": "REJECT", "product_id": "HD-ECO-001", "reason": "Outside 3-month warranty window"}
+{"email_id": "claim_009", "expected_triage": "CLAIM", "expected_outcome": "NEED_INFO", "product_id": null, "reason": "Missing product, date, serial, address, issue"}
+{"email_id": "claim_010", "expected_triage": "CLAIM", "expected_outcome": "NEED_INFO", "product_id": "HD-SLN-002", "reason": "Missing purchase date, serial, proof"}
+{"email_id": "claim_011", "expected_triage": "CLAIM", "expected_outcome": "NEED_INFO", "product_id": "HD-TRV-002", "reason": "Missing date, serial, US address, issue details"}
+{"email_id": "claim_012", "expected_triage": "SPAM", "expected_outcome": null, "product_id": null, "reason": "Promotional spam"}
+{"email_id": "claim_013", "expected_triage": "NON_CLAIM", "expected_outcome": null, "product_id": null, "reason": "Product inquiry, not warranty claim"}
+{"email_id": "claim_014", "expected_triage": "SPAM", "expected_outcome": null, "product_id": null, "reason": "Phishing attempt"}
+{"email_id": "claim_015", "expected_triage": "CLAIM", "expected_outcome": "REJECT", "product_id": "HD-PRO-001", "reason": "Commercial use of home-only product"}

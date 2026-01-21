@@ -1,0 +1,240 @@
+{
+  "policies": [
+    {
+      "policy_id": "HD-PRO-001-v1",
+      "product_id": "HD-PRO-001",
+      "product_name": "ProStyle 3000",
+      "policy_file": "policy_prostyle_3000.txt",
+      "version": "v1",
+      "effective_date": "2025-01-01",
+      "exclusion_keywords": [
+        "commercial use",
+        "salon use",
+        "salon",
+        "water",
+        "liquid",
+        "misuse",
+        "abuse",
+        "unauthorized repair",
+        "cosmetic damage",
+        "incorrect voltage"
+      ],
+      "requirements": [
+        "proof_of_purchase",
+        "serial_number",
+        "contact_info"
+      ]
+    },
+    {
+      "policy_id": "HD-PRO-002-v1",
+      "product_id": "HD-PRO-002",
+      "product_name": "ProStyle 5000",
+      "policy_file": "policy_prostyle_5000.txt",
+      "version": "v1",
+      "effective_date": "2025-01-01",
+      "exclusion_keywords": [
+        "commercial use",
+        "salon use",
+        "over 4 hours",
+        "unauthorized repair",
+        "cosmetic damage",
+        "drop",
+        "incorrect voltage",
+        "firmware",
+        "third-party attachments"
+      ],
+      "requirements": [
+        "proof_of_purchase",
+        "serial_number",
+        "contact_info",
+        "photos"
+      ]
+    },
+    {
+      "policy_id": "HD-TRV-001-v1",
+      "product_id": "HD-TRV-001",
+      "product_name": "TravelMate Compact",
+      "policy_file": "policy_travelmate_compact.txt",
+      "version": "v1",
+      "effective_date": "2025-01-01",
+      "exclusion_keywords": [
+        "airline baggage",
+        "tsa",
+        "liquid",
+        "spill",
+        "commercial use",
+        "non-standard adapter",
+        "incorrect voltage",
+        "outside the united states"
+      ],
+      "requirements": [
+        "proof_of_purchase",
+        "serial_number",
+        "contact_info",
+        "us_address"
+      ]
+    },
+    {
+      "policy_id": "HD-TRV-002-v1",
+      "product_id": "HD-TRV-002",
+      "product_name": "TravelMate Pro",
+      "policy_file": "policy_travelmate_pro.txt",
+      "version": "v1",
+      "effective_date": "2025-01-01",
+      "exclusion_keywords": [
+        "airline baggage",
+        "tsa",
+        "liquid",
+        "humidity",
+        "commercial use",
+        "non-standard adapter",
+        "outside the united states",
+        "outside canada",
+        "non-compatible power"
+      ],
+      "requirements": [
+        "proof_of_purchase",
+        "serial_number",
+        "contact_info",
+        "photos",
+        "us_ca_address"
+      ]
+    },
+    {
+      "policy_id": "HD-SLN-001-v1",
+      "product_id": "HD-SLN-001",
+      "product_name": "SalonElite 7000",
+      "policy_file": "policy_salonelite_7000.txt",
+      "version": "v1",
+      "effective_date": "2025-01-01",
+      "exclusion_keywords": [
+        "chemical exposure",
+        "incorrect voltage",
+        "overheating",
+        "cosmetic damage",
+        "drop",
+        "unauthorized repair",
+        "frayed cord"
+      ],
+      "requirements": [
+        "proof_of_purchase",
+        "serial_number",
+        "contact_info",
+        "business_license"
+      ]
+    },
+    {
+      "policy_id": "HD-SLN-002-v1",
+      "product_id": "HD-SLN-002",
+      "product_name": "SalonElite 9000",
+      "policy_file": "policy_salonelite_9000.txt",
+      "version": "v1",
+      "effective_date": "2025-01-01",
+      "exclusion_keywords": [
+        "chemical exposure",
+        "incorrect voltage",
+        "overheating",
+        "cosmetic damage",
+        "drop",
+        "water damage",
+        "unauthorized updates",
+        "aftermarket attachments"
+      ],
+      "requirements": [
+        "proof_of_purchase",
+        "serial_number",
+        "contact_info",
+        "business_license",
+        "photos"
+      ]
+    },
+    {
+      "policy_id": "HD-ECO-001-v1",
+      "product_id": "HD-ECO-001",
+      "product_name": "EcoBreeze",
+      "policy_file": "policy_ecobreeze.txt",
+      "version": "v1",
+      "effective_date": "2025-01-01",
+      "exclusion_keywords": [
+        "commercial use",
+        "extreme temperatures",
+        "non-eco cleaning",
+        "discoloration",
+        "improper storage",
+        "cosmetic wear"
+      ],
+      "requirements": [
+        "proof_of_purchase",
+        "serial_number",
+        "contact_info",
+        "recycling_confirmation"
+      ]
+    },
+    {
+      "policy_id": "HD-KDS-001-v1",
+      "product_id": "HD-KDS-001",
+      "product_name": "KiddieGlow",
+      "policy_file": "policy_kiddieglow.txt",
+      "version": "v1",
+      "effective_date": "2025-01-01",
+      "exclusion_keywords": [
+        "misuse",
+        "rough handling",
+        "drop",
+        "water",
+        "bath",
+        "adult use",
+        "chewing",
+        "cosmetic damage",
+        "commercial settings"
+      ],
+      "requirements": [
+        "proof_of_purchase",
+        "serial_number",
+        "contact_info",
+        "adult_supervision"
+      ]
+    },
+    {
+      "policy_id": "HD-ION-001-v1",
+      "product_id": "HD-ION-001",
+      "product_name": "IonFlow 2000",
+      "policy_file": "policy_ionflow_2000.txt",
+      "version": "v1",
+      "effective_date": "2025-01-01",
+      "exclusion_keywords": [
+        "commercial use",
+        "dirty filters",
+        "product buildup",
+        "high humidity",
+        "incorrect voltage"
+      ],
+      "requirements": [
+        "proof_of_purchase",
+        "serial_number",
+        "contact_info",
+        "maintenance_description"
+      ]
+    },
+    {
+      "policy_id": "HD-QCK-001-v1",
+      "product_id": "HD-QCK-001",
+      "product_name": "QuickDry Express",
+      "policy_file": "policy_quickdry_express.txt",
+      "version": "v1",
+      "effective_date": "2025-01-01",
+      "exclusion_keywords": [
+        "commercial use",
+        "clogged filters",
+        "covered vents",
+        "continuous use",
+        "power surge"
+      ],
+      "requirements": [
+        "proof_of_purchase",
+        "serial_number",
+        "contact_info"
+      ]
+    }
+  ]
+}
