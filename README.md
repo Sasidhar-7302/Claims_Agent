@@ -184,10 +184,16 @@ For claims that pass deterministic checks, the LLM analyzes:
 
 ## UI Highlights
 
-- Inbox dashboard with KPI cards
-- Human review packet with facts, assumptions, and reasoning
-- Email dispatch screen with editable draft
-- Non-claim emails can receive a courteous response
+- **Inbox Dashboard**: KPI cards for real-time tracking of pending vs. processed claims.
+- **Streamlined Review Interface**: Consolidated view for Executive Summary, Evidence/Policy, and Original Email.
+- **Interactive Decision Form**: One-click Approve/Reject/Need Info with reviewer notes.
+- **Return Label Integration**: In-app PDF generation and attachment for approved claims.
+- **Advanced State Transitions**:
+    - **Resume Workflow**: Quickly pick up claims that are "READY TO SEND".
+    - **Revise Decision**: Change your mind even at the final dispatch stage.
+    - **Active Cancellation**: Cancelled dispatches return to the inbox "Pending" state for re-processing.
+- **Claim History**: Full-text searchable database of all past decisions.
+- **Non-Claim Handling**: Draft and send courteous responses for inquiries or spam.
 
 ---
 
@@ -271,11 +277,13 @@ python -m pytest tests/
 
 ## Validation & Performance
 
-- Accuracy: 100% on the labeled test set (15/15).
-- Reliability: unit tests pass when run locally.
-- Latency: varies by model and hardware.
+- **Accuracy**: 100% on the labeled test set (15/15 cases).
+- **Triage**: 100% correct classification of CLAIM/NON_CLAIM/SPAM.
+- **Decision**: 100% agreement with expected outcomes on all claim types.
+- **Reliability**: Workflow state is persistent and stable across manual revisions and cancellations.
+- **Latency**: Sub-second triage; 2-5s for full extraction and analysis (varies by model).
 
-See full report: `reports/report.md`
+See full reports: `reports/report.md` and `reports/final_validation.md`
 
 ---
 

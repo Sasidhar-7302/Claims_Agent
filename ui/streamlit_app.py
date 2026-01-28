@@ -321,6 +321,17 @@ def run_workflow_to_review(email_id: str):
         
         config = {"configurable": {"thread_id": email_id}}
         
+        # Check if we already have a state for this email to keep ID consistent
+        initial_input = create_initial_state(email_id)
+        try:
+            snapshot = workflow.get_state(config)
+            if snapshot and snapshot.values:
+                # If we have a state, we resume with None input to keep existing claim_id
+                 print(f"[DEBUG] Resuming existing workflow for email: {email_id} to keep ID stable")
+                 initial_input = None
+        except:
+             pass
+
         last_state = None
         progress = st.progress(0)
         status_text = st.empty()
@@ -329,7 +340,7 @@ def run_workflow_to_review(email_id: str):
                  "retrieve_excerpts", "analyze", "review_packet"]
         step_count = 0
         
-        for event in workflow.stream(initial_state, config):
+        for event in workflow.stream(initial_input, config):
             for node_name, node_output in event.items():
                 print(f"[DEBUG] Completed node: {node_name}")
                 step_count += 1
@@ -390,14 +401,19 @@ def resume_workflow_with_decision(decision: str, notes: str = ""):
         
         print(f"[DEBUG] Resuming workflow for email: {email_id} with decision: {decision}")
         
+        # Clear stale data and force re-run from human_review point
         workflow.update_state(
             config,
             {
                 "human_decision": decision,
                 "human_notes": notes,
                 "human_reviewer": "streamlit_user",
-                "human_review_timestamp": datetime.now().isoformat()
-            }
+                "human_review_timestamp": datetime.now().isoformat(),
+                "return_label_path": None,      # Reset label so it must be regenerated
+                "customer_email_draft": None,   # Reset draft
+                "customer_email_path": None     # Reset draft path
+            },
+            as_node="human_review"
         )
         
         last_state = None
@@ -963,23 +979,24 @@ def render_review_interface():
     """, unsafe_allow_html=True)
     
     # Main Content Tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["Executive Summary", "Review Packet", "Original Email", "Deep Analysis"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Executive Summary", "Evidence & Policy", "Customer Email", "Full Report"])
     
     with tab1:
-        # Row 1: Customer & Issue
+        # Row 1: Profile & Issue
         r1_c1, r1_c2 = st.columns(2)
         with r1_c1:
-            st.markdown("### Customer Profile")
+            st.markdown("### Profile")
             st.markdown(f"""
             <div style="background: white; padding: 1rem; border-radius: 8px; border: 1px solid #E2E8F0; height: 100%;">
-                <div><strong>Name:</strong> {extracted.get('customer_name', 'N/A')}</div>
+                <div><strong>Customer:</strong> {extracted.get('customer_name', 'N/A')}</div>
                 <div><strong>Email:</strong> {extracted.get('customer_email', 'N/A')}</div>
-                <div><strong>Address:</strong> {extracted.get('customer_address', 'N/A')}</div>
+                <div><strong>Product:</strong> {state.get('product_name', 'N/A')}</div>
+                <div><strong>Purchased:</strong> {extracted.get('purchase_date', 'N/A')}</div>
             </div>
             """, unsafe_allow_html=True)
             
         with r1_c2:
-            st.markdown("### Issue Description")
+            st.markdown("### Issue")
             st.markdown(f"""
             <div style="background: white; padding: 1rem; border-radius: 8px; border: 1px solid #E2E8F0; height: 100%;">
                 {extracted.get("issue_description", "No description provided.")}
@@ -988,34 +1005,15 @@ def render_review_interface():
 
         st.markdown("") # Spacer
 
-        # Row 2: Product & Warranty
-        r2_c1, r2_c2 = st.columns(2)
-        with r2_c1:
-            st.markdown("### Product Details")
-            st.markdown(f"""
-            <div style="background: white; padding: 1rem; border-radius: 8px; border: 1px solid #E2E8F0; height: 100%;">
-                <div><strong>Product:</strong> {state.get('product_name', 'N/A')}</div>
-                <div><strong>Serial:</strong> {extracted.get('product_serial', 'N/A')}</div>
-                <div><strong>Purchased:</strong> {extracted.get('purchase_date', 'N/A')}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        with r2_c2:
-            st.markdown("### Warranty Status")
+        with st.expander("View Reason & Logic", expanded=True):
+            st.markdown(f"**Reasoning:** {analysis.get('reasoning', 'N/A')}")
             valid = analysis.get("warranty_window_valid")
             if valid is True:
                 st.success(f"Valid Warranty ({analysis.get('warranty_window_details', '')})")
             elif valid is False:
                 st.error(f"Warranty Expired ({analysis.get('warranty_window_details', '')})")
-            else:
-                st.warning("INFO Status Unknown")
-        with st.expander("View Analysis Logic", expanded=True):
-            st.markdown(f"**Reasoning:** {analysis.get('reasoning', 'N/A')}")
-            st.markdown("**Key Facts:**")
-            for fact in analysis.get("facts", []):
-                st.markdown(f"- {fact}")
                 
-        st.markdown("### 4. Decision")
+        st.markdown("### Decision")
         
         with st.form("decision_form"):
             notes = st.text_area("Reviewer Notes (Internal Only)", placeholder="Add context for this decision...")
@@ -1039,97 +1037,68 @@ def render_review_interface():
                 st.rerun()
 
     with tab2:
-        st.markdown("### Review Packet")
-        packet_path = state.get("review_packet_path")
-        packet_content = state.get("review_packet_content")
-        content = ""
-        if packet_content:
-            content = packet_content
-        elif packet_path and Path(packet_path).exists():
-            try:
-                with open(packet_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-            except Exception as e:
-                st.warning(f"Could not read review packet: {e}")
-        if content:
-            st.markdown(content)
-        else:
-            st.info("No review packet found for this claim.")
-        if packet_path and Path(packet_path).exists():
-            try:
-                with open(packet_path, "r", encoding="utf-8") as f:
-                    st.download_button(
-                        "Download Review Packet",
-                        f.read(),
-                        file_name=Path(packet_path).name,
-                        mime="text/markdown",
-                        use_container_width=True
-                    )
-            except Exception:
-                pass
+        st.markdown("### Evidence & Policy")
+        
+        col_ev_1, col_ev_2 = st.columns(2)
+        with col_ev_1:
+            st.markdown("#### Extraction Facts")
+            facts = analysis.get("facts", [])
+            if facts:
+                for fact in facts:
+                    st.markdown(f"- {fact}")
+            else:
+                st.caption("No facts recorded.")
+                
+            st.markdown("#### Assumptions")
+            assumptions = analysis.get("assumptions", [])
+            if assumptions:
+                for assumption in assumptions:
+                    st.markdown(f"- {assumption}")
+            else:
+                st.caption("No assumptions recorded.")
 
-    with tab3:
-        st.markdown("### Original Email")
-        st.markdown(f"**From:** {state.get('email_from', 'N/A')}")
-        st.markdown(f"**Subject:** {state.get('email_subject', 'N/A')}")
-        st.markdown(f"**Date:** {state.get('email_date', 'N/A')}")
-        attachments = state.get("email_attachments", [])
-        st.markdown(f"**Attachments:** {', '.join(attachments) if attachments else 'None'}")
-        st.text_area(
-            "Body",
-            value=state.get("email_body", ""),
-            height=320,
-            disabled=True
-        )
+        with col_ev_2:
+            st.markdown("#### Policy Details")
+            st.markdown(f"**Policy ID:** `{state.get('policy_id', 'N/A')}`")
+            st.markdown(f"**Reason:** {state.get('policy_selection_reason', 'N/A')}")
+            
+            exclusions = analysis.get("exclusions_triggered", [])
+            if exclusions:
+                st.warning("⚠️ Exclusions Triggered")
+                for exclusion in exclusions:
+                    st.markdown(f"- {exclusion}")
 
-    with tab4:
-        st.markdown("### Deep Analysis")
-        st.markdown(f"**Recommendation:** {analysis.get('recommendation', 'N/A')}")
-        st.markdown(f"**Confidence:** {analysis.get('confidence', 0):.0%}")
-        st.markdown(f"**Reasoning:** {analysis.get('reasoning', 'N/A')}")
-
-        st.markdown("#### Facts")
-        facts = analysis.get("facts", [])
-        if facts:
-            for fact in facts:
-                st.markdown(f"- {fact}")
-        else:
-            st.caption("No facts recorded.")
-
-        st.markdown("#### Assumptions")
-        assumptions = analysis.get("assumptions", [])
-        if assumptions:
-            for assumption in assumptions:
-                st.markdown(f"- {assumption}")
-        else:
-            st.caption("No assumptions recorded.")
-
-        st.markdown("#### Exclusions Triggered")
-        exclusions = analysis.get("exclusions_triggered", [])
-        if exclusions:
-            for exclusion in exclusions:
-                st.markdown(f"- {exclusion}")
-        else:
-            st.caption("No exclusions triggered.")
-
-        st.markdown("#### Policy Selection")
-        st.markdown(f"**Policy ID:** {state.get('policy_id', 'N/A')}")
-        st.markdown(f"**Policy File:** {state.get('policy_file', 'N/A')}")
-        st.markdown(f"**Reason:** {state.get('policy_selection_reason', 'N/A')}")
-
+        st.markdown("---")
         excerpts = state.get("policy_excerpts", [])
         if excerpts:
-            st.markdown("#### Policy Excerpts")
+            st.markdown("#### Relevant Policy Excerpts")
             for idx, excerpt in enumerate(excerpts, 1):
                 title = excerpt.get("section_name") or f"Excerpt {idx}"
                 with st.expander(title):
                     st.markdown(excerpt.get("content", ""))
-                    st.caption(
-                        f"Source: {excerpt.get('policy_id', 'N/A')} | "
-                        f"File: {excerpt.get('policy_file', 'N/A')} | "
-                        f"Chunk: {excerpt.get('chunk_index', 'N/A')} | "
-                        f"Distance: {excerpt.get('distance', 'N/A')}"
-                    )
+                    st.caption(f"Source: {excerpt.get('policy_id')} | Score: {excerpt.get('distance', 'N/A')}")
+
+    with tab3:
+        st.markdown("### Original Email")
+        st.markdown(f"**From:** {state.get('email_from', 'N/A')} | **Date:** {state.get('email_date', 'N/A')}")
+        st.markdown(f"**Subject:** {state.get('email_subject', 'N/A')}")
+        st.text_area("Body", value=state.get("email_body", ""), height=400, disabled=True)
+
+    with tab4:
+        st.markdown("### Full Audit Report")
+        st.info("Complete markdown packet for archival purposes.")
+        
+        packet_content = state.get("review_packet_content")
+        packet_path = state.get("review_packet_path")
+        
+        if packet_content:
+            st.markdown(packet_content)
+            if packet_path and Path(packet_path).exists():
+                 with open(packet_path, "r", encoding="utf-8") as f:
+                    st.download_button("Download Full Report", f.read(), file_name=Path(packet_path).name, mime="text/markdown", use_container_width=True)
+        else:
+            st.info("No report generated.")
+
     if st.button("Back to List", use_container_width=True):
         st.session_state.workflow_stage = "select"
         st.session_state.current_state = None
@@ -1325,7 +1294,7 @@ def render_email_dispatch():
         st.markdown("---")
 
     # 4. Action Buttons
-    c1, c2 = st.columns([1, 4])
+    c1, c2, c3 = st.columns([1, 1.5, 2.5])
     with c1:
         # Validation
         can_send_email = True
@@ -1335,15 +1304,28 @@ def render_email_dispatch():
             can_send_email = False
             
         if can_send_email:
-            if st.button("🚀 Confirm & Send Email", type="primary", use_container_width=True):
+            if st.button("🚀 Confirm & Send", type="primary", use_container_width=True):
                  if complete_workflow_and_send():
                      st.balloons()
                      st.rerun()
         else:
-             st.button("🚫 Attach Label First", disabled=True, use_container_width=True, help="You must generate a return label before confirming approval.")
+             st.button("🚫 No Label", disabled=True, use_container_width=True, help="You must generate a return label before confirming approval.")
     
     with c2:
+        if st.button("🔄 Revise Decision", use_container_width=True):
+            # Remove from pending dispatch and go back to review
+            email_id = st.session_state.current_email
+            if email_id in st.session_state.pending_dispatch:
+                st.session_state.pending_dispatch.remove(email_id)
+            st.session_state.workflow_stage = "review"
+            st.rerun()
+
+    with c3:
         if st.button("Cancel & Return to Inbox", use_container_width=True):
+             # Remove from pending dispatch so it returns to 'Process' state instead of 'Resume'
+             email_id = st.session_state.current_email
+             if email_id in st.session_state.pending_dispatch:
+                 st.session_state.pending_dispatch.remove(email_id)
              st.session_state.workflow_stage = "select"
              st.rerun()
 
@@ -1399,16 +1381,22 @@ def render_completion():
     
     st.success(f"✅ Email successfully sent to **{customer_email}**")
     
-    with st.expander("View Sent Message"):
-        email_content = state.get("customer_email_draft", "No content")
+    with st.expander("View Sent Message", expanded=True):
+        email_content = state.get("customer_email_draft", "No email content draft found.")
         email_path = state.get("customer_email_path")
+        
+        # Try to read the actual FINAL file if possible (which has the label appended)
         if email_path and Path(email_path).exists():
             try:
                 with open(email_path, "r", encoding="utf-8") as f:
                     email_content = f.read()
             except:
                 pass
-        st.text(email_content)
+        
+        if not email_content or email_content == "No content":
+             st.info("Email content preview unavailable.")
+        else:
+             st.text_area("Final Email Message", value=email_content, height=400, disabled=True)
     
     st.markdown("---")
     

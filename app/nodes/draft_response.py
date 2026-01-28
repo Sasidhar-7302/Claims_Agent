@@ -30,7 +30,7 @@ CLAIM DETAILS:
 - Issue: {issue_summary}
 
 NEXT STEPS:
-1. A prepaid return shipping label is attached to this email
+{label_notice}
 2. Please pack your {product_name} securely in its original packaging if available
 3. Drop off the package at any authorized shipping location
 4. Once we receive your product, we will process your {resolution} within 5-7 business days
@@ -195,12 +195,20 @@ def draft_customer_response(state: ClaimState) -> ClaimState:
     issue_summary = extracted.get("issue_description", "Product issue")[:100]
     
     if decision == "APPROVE":
+        # Dynamic label notice
+        label_notice = ""
+        if state.get("return_label_path") or True: # Force notice for approve as it will be generated
+             label_notice = "1. A prepaid return shipping label is attached to this email"
+        else:
+             label_notice = "1. Our team will follow up with return shipping instructions"
+
         email_content = APPROVAL_TEMPLATE.format(
             claim_id=claim_id,
             customer_name=customer_name,
             product_name=product_name,
             issue_summary=issue_summary,
-            resolution="replacement"
+            resolution="replacement",
+            label_notice=label_notice
         )
         
     elif decision == "REJECT":
