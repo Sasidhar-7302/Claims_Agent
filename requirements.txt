@@ -18,6 +18,7 @@ python-dotenv>=1.0.0
 
 # Data handling
 pydantic>=2.0.0
+numpy<2.0
 
 # Optional: Vector store for policy retrieval
 chromadb>=0.5.0
