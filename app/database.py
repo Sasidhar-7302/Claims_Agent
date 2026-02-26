@@ -103,6 +103,24 @@ def init_db():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS email_dispatches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            dispatch_key TEXT UNIQUE NOT NULL,
+            email_id TEXT,
+            claim_id TEXT,
+            provider TEXT,
+            recipient TEXT,
+            subject TEXT,
+            payload_hash TEXT,
+            status TEXT NOT NULL,
+            message_id TEXT,
+            error TEXT,
+            metadata TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     ensure_columns(cursor, {
         "product_id": "TEXT",
         "policy_id": "TEXT",
@@ -115,6 +133,99 @@ def init_db():
     
     conn.commit()
     conn.close()
+
+
+def get_dispatch_by_key(dispatch_key: str) -> Optional[Dict[str, Any]]:
+    """Return a dispatch record by idempotency key."""
+    if not dispatch_key:
+        return None
+    try:
+        init_db()
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM email_dispatches WHERE dispatch_key = ?", (dispatch_key,))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return None
+        return {
+            "id": row["id"],
+            "dispatch_key": row["dispatch_key"],
+            "email_id": row["email_id"],
+            "claim_id": row["claim_id"],
+            "provider": row["provider"],
+            "recipient": row["recipient"],
+            "subject": row["subject"],
+            "payload_hash": row["payload_hash"],
+            "status": row["status"],
+            "message_id": row["message_id"],
+            "error": row["error"],
+            "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+            "created_at": row["created_at"],
+        }
+    except Exception as e:
+        print(f"[DB] Error getting dispatch '{dispatch_key}': {e}")
+        return None
+
+
+def record_email_dispatch(
+    dispatch_key: str,
+    email_id: str,
+    claim_id: str,
+    provider: str,
+    recipient: str,
+    subject: str,
+    payload_hash: str,
+    status: str,
+    message_id: str = "",
+    error: str = "",
+    metadata: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """Insert or update an outbound email dispatch record."""
+    if not dispatch_key:
+        return False
+    try:
+        init_db()
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO email_dispatches (
+                dispatch_key, email_id, claim_id, provider, recipient, subject,
+                payload_hash, status, message_id, error, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(dispatch_key) DO UPDATE SET
+                email_id = excluded.email_id,
+                claim_id = excluded.claim_id,
+                provider = excluded.provider,
+                recipient = excluded.recipient,
+                subject = excluded.subject,
+                payload_hash = excluded.payload_hash,
+                status = excluded.status,
+                message_id = excluded.message_id,
+                error = excluded.error,
+                metadata = excluded.metadata
+            """,
+            (
+                dispatch_key,
+                email_id,
+                claim_id,
+                provider,
+                recipient,
+                subject,
+                payload_hash,
+                status,
+                message_id,
+                error,
+                json.dumps(metadata or {}),
+            ),
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"[DB] Error recording dispatch '{dispatch_key}': {e}")
+        return False
 
 
 def _normalize_setting_value(value: Any) -> Tuple[str, str]:

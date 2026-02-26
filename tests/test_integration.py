@@ -53,8 +53,7 @@ def test_vector_store_initialization():
         assert store.collection.name == "warranty_policies"
         
         # Simple count check
-        count = store.collection.count()
-        # We expect some items since we ran index_db.py
+        count = store.ensure_indexed()
         assert count > 0, "Vector store should not be empty after indexing"
         
     except Exception as e:
@@ -62,6 +61,7 @@ def test_vector_store_initialization():
 
 def test_vector_store_query():
     store = WarrantyVectorStore()
+    store.ensure_indexed()
     results = store.query("water damage", n_results=1)
     assert len(results) > 0
     assert "content" in results[0]

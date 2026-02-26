@@ -133,19 +133,21 @@ def _extract_order_number_from_text(text: str) -> Optional[str]:
 def _deterministic_extract(state: ClaimState) -> Dict[str, Any]:
     """Deterministic extraction for demo mode and as a fallback when LLMs fail."""
     email_body = state.get("email_body", "") or ""
+    attachment_text = state.get("email_attachment_text", "") or ""
     email_from = state.get("email_from", "") or ""
     attachments = state.get("email_attachments", []) or []
+    source_text = f"{email_body}\n\n{attachment_text}".strip()
 
     extracted: Dict[str, Any] = {
         "customer_name": _extract_customer_name_from_signature(email_body),
         "customer_email": None,
-        "customer_phone": extract_phone_from_text(email_body),
-        "customer_address": extract_address_from_text(email_body),
-        "product_name": _find_product_in_text(email_body),
-        "product_serial": extract_serial_from_text(email_body),
-        "purchase_date": extract_date_from_text(email_body),
+        "customer_phone": extract_phone_from_text(source_text),
+        "customer_address": extract_address_from_text(source_text),
+        "product_name": _find_product_in_text(source_text),
+        "product_serial": extract_serial_from_text(source_text),
+        "purchase_date": extract_date_from_text(source_text),
         "purchase_location": None,
-        "order_number": _extract_order_number_from_text(email_body),
+        "order_number": _extract_order_number_from_text(source_text),
         "issue_description": None,
         "has_proof_of_purchase": False,
         "missing_fields": [],
@@ -155,7 +157,7 @@ def _deterministic_extract(state: ClaimState) -> Dict[str, Any]:
     if "@" in email_from:
         extracted["customer_email"] = email_from.strip()
     else:
-        match = re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", email_body)
+        match = re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", source_text)
         if match:
             extracted["customer_email"] = match.group(0)
 
@@ -184,7 +186,8 @@ def _deterministic_extract(state: ClaimState) -> Dict[str, Any]:
     proof_keywords = ["receipt", "order", "confirmation", "invoice"]
     has_proof = any(any(kw in (att or "").lower() for kw in proof_keywords) for att in attachments)
     if not has_proof:
-        has_proof = bool(re.search(r"\b(receipt|order|confirmation|invoice|proof of purchase)\b", email_body.lower()))
+        body_plus_attachment = f"{email_body}\n{attachment_text}".lower()
+        has_proof = bool(re.search(r"\b(receipt|order|confirmation|invoice|proof of purchase)\b", body_plus_attachment))
     extracted["has_proof_of_purchase"] = has_proof
 
     # Missing fields and attachments
@@ -379,6 +382,8 @@ def extract_fields(state: ClaimState) -> ClaimState:
         return state
     
     email_body = state.get("email_body", "")
+    attachment_text = state.get("email_attachment_text", "")
+    combined_body = (f"{email_body}\n\nAttachment text:\n{attachment_text}").strip()
     email_from = state.get("email_from", "")
     demo_mode = os.getenv("DEMO_MODE", "false").strip().lower() == "true"
 
@@ -408,7 +413,7 @@ def extract_fields(state: ClaimState) -> ClaimState:
             email_from=email_from,
             email_subject=state.get("email_subject", ""),
             email_date=state.get("email_date", ""),
-            email_body=email_body[:3000],
+            email_body=combined_body[:4500],
             attachments=", ".join(state.get("email_attachments", [])) or "None"
         )
         
@@ -445,13 +450,13 @@ def extract_fields(state: ClaimState) -> ClaimState:
 
         # Fallback extraction from email body if missing
         if not extracted.get("customer_phone"):
-            extracted["customer_phone"] = extract_phone_from_text(email_body)
+            extracted["customer_phone"] = extract_phone_from_text(combined_body)
         if not extracted.get("product_serial"):
-            extracted["product_serial"] = extract_serial_from_text(email_body)
+            extracted["product_serial"] = extract_serial_from_text(combined_body)
         if not extracted.get("purchase_date"):
-            extracted["purchase_date"] = extract_date_from_text(email_body)
+            extracted["purchase_date"] = extract_date_from_text(combined_body)
         if not extracted.get("customer_address"):
-            extracted["customer_address"] = extract_address_from_text(email_body)
+            extracted["customer_address"] = extract_address_from_text(combined_body)
         
         # Check for proof of purchase
         attachments = state.get("email_attachments", [])
@@ -463,7 +468,7 @@ def extract_fields(state: ClaimState) -> ClaimState:
                 for att in attachments
             )
             if not has_proof:
-                has_proof = bool(re.search(r"\b(receipt|order|confirmation|invoice|proof of purchase)\b", email_body.lower()))
+                has_proof = bool(re.search(r"\b(receipt|order|confirmation|invoice|proof of purchase)\b", combined_body.lower()))
         extracted["has_proof_of_purchase"] = has_proof
         
         # Normalize derived fields after fallback

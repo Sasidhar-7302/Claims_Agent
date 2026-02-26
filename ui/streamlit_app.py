@@ -30,7 +30,8 @@ from app.database import (
     get_setting, set_setting
 )
 from app.nodes.draft_response import draft_non_claim_response
-from langgraph.checkpoint.memory import MemorySaver
+from app.checkpointing import get_checkpointer, get_checkpoint_db_path
+from app.integrations.outbound_email import send_claim_email
 
 # Paths
 BASE_DIR = Path(__file__).parent.parent
@@ -265,6 +266,7 @@ def render_onboarding():
         if st.button("Finish Setup (Demo)", use_container_width=True, type="primary"):
             set_setting("app.mode", "demo")
             set_setting("email.source", "local")
+            set_setting("email.outbound_mode", "manual")
             set_setting("app.onboarding_complete", True)
             if os.getenv("DEMO_MODE", "false").strip().lower() != "true":
                 os.environ["DEMO_MODE"] = "true"
@@ -277,6 +279,19 @@ def render_onboarding():
     st.markdown("### Gmail Connection")
     set_setting("app.mode", "gmail")
     set_setting("email.source", "gmail")
+
+    outbound_choice = st.selectbox(
+        "Outbound response delivery",
+        ["Gmail API (recommended)", "Manual (draft only)", "SMTP"],
+        index=0,
+        key="onboard_outbound_mode",
+    )
+    outbound_map = {
+        "Gmail API (recommended)": "gmail_api",
+        "Manual (draft only)": "manual",
+        "SMTP": "smtp",
+    }
+    set_setting("email.outbound_mode", outbound_map[outbound_choice])
 
     client_path, token_path = get_gmail_paths()
     uploaded_secret = st.file_uploader("Upload Gmail client secrets JSON", type=["json"], key="onboard_gmail_client_secret")
@@ -498,7 +513,7 @@ if "initialized" not in st.session_state:
     ]
     st.session_state.claim_decisions = claim_decisions_db
     st.session_state.workflow = None
-    st.session_state.checkpointer = MemorySaver()
+    st.session_state.checkpointer = get_checkpointer()
     st.session_state.current_state = None
     st.session_state.current_email = None
     st.session_state.pending_dispatch = []
@@ -513,6 +528,17 @@ if "onboarding_checked" not in st.session_state:
 if "policy_env_applied" not in st.session_state:
     apply_policy_source(get_setting("policy.source", "demo") or "demo")
     st.session_state.policy_env_applied = True
+
+if get_email_source() == "gmail" and st.session_state.get("gmail_service") is None:
+    try:
+        from app.integrations.gmail import get_gmail_service
+
+        client_path, token_path = get_gmail_paths()
+        if client_path.exists() and token_path.exists():
+            st.session_state.gmail_service = get_gmail_service(client_path, token_path)
+    except Exception:
+        # Lazy reconnection failures are handled in sidebar connect flow.
+        pass
 
 if "pending_dispatch" not in st.session_state:
     st.session_state.pending_dispatch = []
@@ -540,6 +566,8 @@ if "llm_error" not in st.session_state:
     st.session_state.llm_error = ""
 if "non_claim_drafts" not in st.session_state:
     st.session_state.non_claim_drafts = {}
+if "outbound_mode" not in st.session_state:
+    st.session_state.outbound_mode = get_outbound_mode()
 
 
 def load_inbox_emails():
@@ -580,6 +608,10 @@ def get_email_source() -> str:
     return (get_setting("email.source", "local") or "local").strip().lower()
 
 
+def get_outbound_mode() -> str:
+    return (get_setting("email.outbound_mode", "manual") or "manual").strip().lower()
+
+
 def get_gmail_paths() -> tuple[Path, Path]:
     secrets_dir = OUTBOX_DIR / "secrets"
     client_path = Path(get_setting("gmail.client_secrets_path", str(secrets_dir / "gmail_client_secret.json")))
@@ -605,21 +637,24 @@ def load_gmail_emails(max_results: int = 25) -> list[dict]:
 
     emails: list[dict] = []
     for msg_id in list_message_ids(service, query=query, max_results=max_results):
-        # Lightweight fetch for subject/from/date/snippet
-        msg = fetch_message(service, msg_id)
-        is_processed = msg.message_id in processed_ids
-        decision = claim_decisions.get(msg.message_id)
-        emails.append({
-            "file": "gmail",
-            "email_id": msg.message_id,
-            "subject": msg.subject or "No subject",
-            "from": msg.email_from or "Unknown",
-            "date": msg.date or "Unknown",
-            "body": (msg.body or "")[:200],
-            "expected": "Unknown",
-            "is_processed": is_processed,
-            "decision": decision,
-        })
+        try:
+            # Lightweight fetch for subject/from/date/snippet
+            msg = fetch_message(service, msg_id)
+            is_processed = msg.message_id in processed_ids
+            decision = claim_decisions.get(msg.message_id)
+            emails.append({
+                "file": "gmail",
+                "email_id": msg.message_id,
+                "subject": msg.subject or "No subject",
+                "from": msg.email_from or "Unknown",
+                "date": msg.date or "Unknown",
+                "body": (msg.body or "")[:200],
+                "expected": "Unknown",
+                "is_processed": is_processed,
+                "decision": decision,
+            })
+        except Exception as e:
+            st.warning(f"Could not load Gmail message {msg_id}: {e}")
 
     emails.sort(key=lambda x: (x["is_processed"], x["email_id"]))
     return emails
@@ -638,7 +673,12 @@ def fetch_gmail_message_fields(message_id: str) -> dict:
         raise RuntimeError("Gmail is not connected.")
     from app.integrations.gmail import fetch_message
 
-    msg = fetch_message(service, message_id)
+    msg = fetch_message(
+        service,
+        message_id,
+        download_attachments=True,
+        attachment_dir=OUTBOX_DIR / "attachments" / message_id,
+    )
     return {
         "email_id": msg.message_id,
         "email_from": msg.email_from,
@@ -647,7 +687,21 @@ def fetch_gmail_message_fields(message_id: str) -> dict:
         "email_date": msg.date,
         "email_body": msg.body,
         "email_attachments": msg.attachments,
+        "email_attachment_paths": msg.attachment_paths,
     }
+
+
+def mark_gmail_processed(message_id: str) -> None:
+    """Mark a Gmail message as read after successful processing."""
+    service = get_gmail_service_cached()
+    if service is None:
+        return
+    try:
+        from app.integrations.gmail import mark_message_read
+
+        mark_message_read(service, message_id)
+    except Exception as e:
+        st.warning(f"Could not mark Gmail message as read: {e}")
 
 
 def run_workflow_to_review(email_id: str, email_data: dict | None = None):
@@ -741,6 +795,9 @@ def resume_workflow_with_decision(decision: str, notes: str = ""):
     try:
         email_id = st.session_state.current_email
         workflow = st.session_state.workflow
+        if workflow is None:
+            workflow = compile_workflow(st.session_state.checkpointer)
+            st.session_state.workflow = workflow
         config = {"configurable": {"thread_id": email_id}}
         
         print(f"[DEBUG] Resuming workflow for email: {email_id} with decision: {decision}")
@@ -994,6 +1051,43 @@ def render_sidebar():
                 st.session_state.emails = load_emails()
                 st.rerun()
 
+        st.markdown("---")
+        st.markdown("### Outbound Delivery")
+        outbound_options = {
+            "Manual (Draft Only)": "manual",
+            "Gmail API": "gmail_api",
+            "SMTP": "smtp",
+        }
+        current_outbound = get_outbound_mode()
+        labels = list(outbound_options.keys())
+        current_idx = 0
+        for idx, label in enumerate(labels):
+            if outbound_options[label] == current_outbound:
+                current_idx = idx
+                break
+
+        outbound_choice = st.selectbox(
+            "Send mode",
+            labels,
+            index=current_idx,
+            key="outbound_mode_select",
+            help="Manual keeps drafts only. Gmail API/SMTP sends real emails.",
+        )
+        outbound_mode = outbound_options[outbound_choice]
+        if outbound_mode != current_outbound:
+            set_setting("email.outbound_mode", outbound_mode)
+            st.session_state.outbound_mode = outbound_mode
+
+        if outbound_mode == "gmail_api":
+            if st.session_state.get("gmail_service") is None:
+                st.caption("Gmail API mode requires a connected Gmail account.")
+            else:
+                st.caption("Gmail API status: connected.")
+        elif outbound_mode == "smtp":
+            st.caption("Set SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM in .env.")
+
+        st.caption(f"Workflow checkpoint DB: {get_checkpoint_db_path()}")
+
         st.write("**Recent Activity**")
         
         # Mini feed of recent actions (click to open)
@@ -1035,7 +1129,7 @@ def render_sidebar():
             st.session_state.current_state = None
             st.session_state.view_claim_id = None
             st.session_state.workflow = None
-            st.session_state.checkpointer = MemorySaver()
+            st.session_state.checkpointer = get_checkpointer()
             st.session_state.workflow_stage = "select"
             st.session_state.emails = load_emails()
             st.rerun()
@@ -1272,6 +1366,8 @@ def render_review_interface():
                     "timestamp": datetime.now().isoformat()
                 })
                 st.session_state.claim_decisions[state.get("email_id")] = triage_result
+                if get_email_source() == "gmail" and state.get("email_id"):
+                    mark_gmail_processed(state.get("email_id"))
                 st.session_state.workflow_stage = "select"
                 st.session_state.current_state = None
                 st.success(f"Archived as {triage_result}")
@@ -1348,6 +1444,23 @@ def render_review_interface():
                         st.error(f"Could not save draft: {e}")
 
                 if st.button("Send Response", use_container_width=True, type="primary"):
+                    completed_state = {
+                        **state,
+                        "customer_email_draft": edited,
+                        "customer_email_path": draft.get("email_path", ""),
+                        "human_decision": "NON_CLAIM",
+                        "human_notes": "Non-claim response sent",
+                        "human_reviewer": "streamlit_user",
+                        "human_review_timestamp": datetime.now().isoformat()
+                    }
+
+                    send_mode = get_outbound_mode()
+                    gmail_service = st.session_state.get("gmail_service") if send_mode == "gmail_api" else None
+                    dispatch = send_claim_email(completed_state, send_mode=send_mode, gmail_service=gmail_service)
+                    if not dispatch.ok:
+                        st.error(f"Could not send response: {dispatch.error}")
+                        return
+
                     sent_dir = OUTBOX_DIR / "sent"
                     sent_dir.mkdir(parents=True, exist_ok=True)
                     sent_path = sent_dir / f"{state.get('claim_id', 'UNKNOWN')}_non_claim_sent.txt"
@@ -1358,16 +1471,15 @@ def render_review_interface():
                         st.error(f"Could not write sent copy: {e}")
                         return
 
-                    completed_state = {
-                        **state,
-                        "customer_email_draft": edited,
-                        "customer_email_path": draft.get("email_path", ""),
+                    completed_state.update({
                         "email_sent": True,
-                        "human_decision": "NON_CLAIM",
-                        "human_notes": "Non-claim response sent",
-                        "human_reviewer": "streamlit_user",
-                        "human_review_timestamp": datetime.now().isoformat()
-                    }
+                        "email_dispatch_status": dispatch.status,
+                        "email_dispatch_provider": dispatch.provider,
+                        "email_dispatch_message_id": dispatch.message_id,
+                        "email_dispatch_error": dispatch.error,
+                        "email_dispatch_timestamp": datetime.now().isoformat(),
+                        "email_dispatch_idempotency_key": dispatch.dispatch_key,
+                    })
                     save_claim(completed_state, decision="NON_CLAIM", notes="Non-claim response sent")
                     email_id_value = state.get("email_id")
                     if email_id_value:
@@ -1378,6 +1490,8 @@ def render_review_interface():
                                 "timestamp": datetime.now().isoformat()
                             })
                         st.session_state.claim_decisions[email_id_value] = "NON_CLAIM"
+                        if get_email_source() == "gmail":
+                            mark_gmail_processed(email_id_value)
                     st.session_state.non_claim_drafts.pop(email_id, None)
                     st.session_state.current_state = None
                     st.session_state.workflow_stage = "select"
@@ -1543,12 +1657,48 @@ def complete_workflow_and_send():
     try:
         email_id = st.session_state.current_email
         workflow = st.session_state.workflow
+        if workflow is None:
+            workflow = compile_workflow(st.session_state.checkpointer)
+            st.session_state.workflow = workflow
         config = {"configurable": {"thread_id": email_id}}
-        
-        # Update state with 'email_sent' flag
+
+        state = st.session_state.current_state or {}
+        send_mode = get_outbound_mode()
+        gmail_service = st.session_state.get("gmail_service") if send_mode == "gmail_api" else None
+        dispatch = send_claim_email(state, send_mode=send_mode, gmail_service=gmail_service)
+
+        if not dispatch.ok:
+            st.error(f"Email delivery failed ({dispatch.provider}): {dispatch.error}")
+            st.session_state.current_state = {
+                **state,
+                "email_sent": False,
+                "email_dispatch_status": dispatch.status,
+                "email_dispatch_provider": dispatch.provider,
+                "email_dispatch_error": dispatch.error,
+                "email_dispatch_timestamp": datetime.now().isoformat(),
+                "email_dispatch_idempotency_key": dispatch.dispatch_key,
+            }
+            return False
+
+        if dispatch.duplicate:
+            st.info("Duplicate send prevented by idempotency guard; using previously sent email record.")
+        elif dispatch.status == "SKIPPED":
+            st.info("Manual mode enabled: email not sent externally, workflow finalized with draft.")
+        else:
+            st.success(f"Email sent via {dispatch.provider} to {dispatch.recipient}.")
+
+        # Persist dispatch metadata before resuming final workflow nodes.
         workflow.update_state(
             config,
-            {"email_sent": True}
+            {
+                "email_sent": True,
+                "email_dispatch_status": dispatch.status,
+                "email_dispatch_provider": dispatch.provider,
+                "email_dispatch_message_id": dispatch.message_id,
+                "email_dispatch_error": dispatch.error,
+                "email_dispatch_timestamp": datetime.now().isoformat(),
+                "email_dispatch_idempotency_key": dispatch.dispatch_key,
+            }
         )
         
         last_state = None
@@ -1583,6 +1733,8 @@ def complete_workflow_and_send():
             "timestamp": datetime.now().isoformat()
         })
         st.session_state.claim_decisions[email_id] = decision
+        if get_email_source() == "gmail":
+            mark_gmail_processed(email_id)
         if email_id in st.session_state.pending_dispatch:
             st.session_state.pending_dispatch.remove(email_id)
         return True
@@ -1724,22 +1876,32 @@ def render_email_dispatch():
         st.markdown("---")
 
     # 4. Action Buttons
+    send_mode = get_outbound_mode()
+    st.caption(f"Outbound mode: `{send_mode}`")
     c1, c2, c3 = st.columns([1, 1.5, 2.5])
     with c1:
         # Validation
         can_send_email = True
         label_exists = state.get("return_label_path") and Path(state.get("return_label_path")).exists()
+        send_block_reason = ""
         
         if decision == "APPROVE" and not label_exists:
             can_send_email = False
-            
+            send_block_reason = "Generate the return label before sending."
+        if send_mode == "gmail_api" and st.session_state.get("gmail_service") is None:
+            can_send_email = False
+            send_block_reason = "Gmail API mode requires an active Gmail connection."
+        if send_mode == "smtp" and not (os.getenv("SMTP_HOST") or "").strip():
+            can_send_email = False
+            send_block_reason = "SMTP mode requires SMTP_HOST in .env."
+
         if can_send_email:
-            if st.button("🚀 Confirm & Send", type="primary", use_container_width=True):
-                 if complete_workflow_and_send():
-                     st.balloons()
-                     st.rerun()
+             if st.button("🚀 Confirm & Send", type="primary", use_container_width=True):
+                  if complete_workflow_and_send():
+                      st.balloons()
+                      st.rerun()
         else:
-             st.button("🚫 No Label", disabled=True, use_container_width=True, help="You must generate a return label before confirming approval.")
+             st.button("Cannot Send", disabled=True, use_container_width=True, help=send_block_reason or "Resolve validation issues before sending.")
     
     with c2:
         if st.button("🔄 Revise Decision", use_container_width=True):

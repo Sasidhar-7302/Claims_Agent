@@ -118,11 +118,26 @@ class WarrantyVectorStore:
         self.client = chromadb.PersistentClient(path=str(get_chroma_dir()))
         
         self.embedding_fn = get_embedding_function()
-        
-        self.collection = self.client.get_or_create_collection(
-            name="warranty_policies",
-            embedding_function=self.embedding_fn
-        )
+
+        try:
+            self.collection = self.client.get_or_create_collection(
+                name="warranty_policies",
+                embedding_function=self.embedding_fn
+            )
+        except ValueError as e:
+            # Handle embedding-mode switches (e.g., hash -> sentence-transformer).
+            if "Embedding function conflict" in str(e):
+                print("[WARN] Embedding function conflict detected. Resetting collection with current embedding function.")
+                try:
+                    self.client.delete_collection("warranty_policies")
+                except Exception:
+                    pass
+                self.collection = self.client.get_or_create_collection(
+                    name="warranty_policies",
+                    embedding_function=self.embedding_fn
+                )
+            else:
+                raise
 
     def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
         """Simple sliding window chunking."""

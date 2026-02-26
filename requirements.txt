@@ -1,5 +1,6 @@
 # Core dependencies
 langgraph>=0.2.0
+langgraph-checkpoint-sqlite>=3.0.0
 langchain>=0.3.0
 langchain-google-genai>=2.0.0
 google-generativeai>=0.8.0
@@ -30,6 +31,8 @@ chromadb>=0.5.0
 
 # Optional: PDF text extraction for policy uploads
 pypdf>=4.0.0
+Pillow>=10.0.0
+pytesseract>=0.3.10
 
 # Testing
 pytest>=7.0.0

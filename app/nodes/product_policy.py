@@ -8,13 +8,12 @@ import json
 from pathlib import Path
 from typing import Optional, Tuple
 from app.state import ClaimState
+from app.vector_store import get_policies_dir, get_policy_index_file
 
 
 # Load product catalog
 BASE_DIR = Path(__file__).parent.parent.parent
 PRODUCTS_FILE = BASE_DIR / "data" / "products.json"
-POLICIES_DIR = BASE_DIR / "data" / "policies"
-POLICY_INDEX_FILE = POLICIES_DIR / "index.json"
 
 
 def load_products() -> dict:
@@ -29,10 +28,11 @@ def load_products() -> dict:
 
 def load_policy_index() -> list:
     """Load policy index metadata."""
-    if not POLICY_INDEX_FILE.exists():
+    policy_index_file = get_policy_index_file()
+    if not policy_index_file.exists():
         return []
     try:
-        with open(POLICY_INDEX_FILE, "r", encoding="utf-8") as f:
+        with open(policy_index_file, "r", encoding="utf-8") as f:
             data = json.load(f)
         return data.get("policies", [])
     except Exception as e:
@@ -124,7 +124,7 @@ def find_product_match(product_name: str, products: list) -> Tuple[Optional[dict
 
 def verify_policy_exists(policy_file: str) -> bool:
     """Check if the policy file exists."""
-    policy_path = POLICIES_DIR / policy_file
+    policy_path = get_policies_dir() / policy_file
     return policy_path.exists()
 
 

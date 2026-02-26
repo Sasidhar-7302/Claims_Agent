@@ -7,9 +7,9 @@ workflow with human-in-the-loop review.
 
 from typing import Literal
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.memory import MemorySaver
 
 from app.state import ClaimState
+from app.checkpointing import get_checkpointer
 
 # Import all node functions
 from app.nodes.ingest import ingest_email
@@ -139,7 +139,7 @@ def compile_workflow(checkpointer=None):
     workflow = create_workflow()
     
     if checkpointer is None:
-        checkpointer = MemorySaver()
+        checkpointer = get_checkpointer()
     
     # Compile with interrupt before human_review for pause/resume
     compiled = workflow.compile(

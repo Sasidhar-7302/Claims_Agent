@@ -130,7 +130,14 @@ Please print this label and attach it to your return package.
             "review_packet": state.get("review_packet_path"),
             "customer_email": state.get("customer_email_path"),
             "return_label": state.get("return_label_path"),
-            "label_attached_to_email": decision == "APPROVE" and bool(state.get("return_label_path"))
+            "label_attached_to_email": decision == "APPROVE" and bool(state.get("return_label_path")),
+            "email_sent": bool(state.get("email_sent")),
+            "email_dispatch_status": state.get("email_dispatch_status"),
+            "email_dispatch_provider": state.get("email_dispatch_provider"),
+            "email_dispatch_message_id": state.get("email_dispatch_message_id"),
+            "email_dispatch_error": state.get("email_dispatch_error"),
+            "email_dispatch_timestamp": state.get("email_dispatch_timestamp"),
+            "email_dispatch_idempotency_key": state.get("email_dispatch_idempotency_key"),
         },
         
         "status": {

@@ -70,6 +70,9 @@ class ClaimState(TypedDict, total=False):
     email_date: str
     email_body: str
     email_attachments: List[str]
+    email_attachment_paths: List[str]
+    email_attachment_text: Optional[str]
+    email_attachment_details: Optional[List[dict]]
     
     # Triage result (from triage node)
     triage_result: Literal["CLAIM", "NON_CLAIM", "SPAM"]
@@ -117,6 +120,12 @@ class ClaimState(TypedDict, total=False):
     return_label_path: Optional[str]
     email_sent: Optional[bool]
     final_email_body: Optional[str]
+    email_dispatch_provider: Optional[str]
+    email_dispatch_message_id: Optional[str]
+    email_dispatch_status: Optional[str]
+    email_dispatch_error: Optional[str]
+    email_dispatch_timestamp: Optional[str]
+    email_dispatch_idempotency_key: Optional[str]
     
     # Workflow metadata
     workflow_status: Literal["PENDING", "TRIAGED", "EXTRACTED", "ANALYZED", 
@@ -140,5 +149,6 @@ def create_initial_state(email_id: str) -> ClaimState:
         workflow_status="PENDING",
         processing_started=datetime.now().isoformat(),
         email_attachments=[],
+        email_attachment_paths=[],
         messages=[],
     )

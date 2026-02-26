@@ -12,7 +12,7 @@ Tokens are stored locally in an untracked path (recommended: under outbox/).
 from __future__ import annotations
 
 import base64
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -33,6 +33,7 @@ class GmailMessage:
     date: str
     body: str
     attachments: List[str]
+    attachment_paths: List[str] = field(default_factory=list)
 
 
 def _decode_b64url(data: str) -> str:
@@ -63,9 +64,9 @@ def _walk_parts(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     return parts
 
 
-def _extract_body_and_attachments(payload: Dict[str, Any]) -> Tuple[str, List[str]]:
+def _extract_body_and_attachment_parts(payload: Dict[str, Any]) -> Tuple[str, List[Dict[str, Any]]]:
     body = ""
-    attachments: List[str] = []
+    attachment_parts: List[Dict[str, Any]] = []
     parts = _walk_parts(payload)
 
     # Prefer text/plain, fall back to text/html.
@@ -79,8 +80,15 @@ def _extract_body_and_attachments(payload: Dict[str, Any]) -> Tuple[str, List[st
         data = part_body.get("data")
         attachment_id = part_body.get("attachmentId")
 
-        if filename and (attachment_id or (data and mime not in ("text/plain", "text/html"))):
-            attachments.append(filename)
+        if filename and (attachment_id or data):
+            attachment_parts.append(
+                {
+                    "filename": filename,
+                    "mime_type": mime,
+                    "attachment_id": attachment_id,
+                    "data": data,
+                }
+            )
 
         if data and mime == "text/plain":
             plain_candidates.append(_decode_b64url(data))
@@ -100,14 +108,14 @@ def _extract_body_and_attachments(payload: Dict[str, Any]) -> Tuple[str, List[st
         if direct:
             body = _decode_b64url(direct).strip()
 
-    return body, attachments
+    return body, attachment_parts
 
 
 def _strip_html(html: str) -> str:
     import re
 
     # Remove script/style and tags.
-    html = re.sub(r"(?is)<(script|style).*?>.*?</\\1>", " ", html or "")
+    html = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", html or "")
     html = re.sub(r"(?s)<[^>]+>", " ", html)
     html = re.sub(r"&nbsp;", " ", html, flags=re.IGNORECASE)
     html = re.sub(r"&amp;", "&", html, flags=re.IGNORECASE)
@@ -165,12 +173,86 @@ def list_message_ids(service: Any, query: str, max_results: int = 20, user_id: s
     return out
 
 
-def fetch_message(service: Any, message_id: str, user_id: str = "me") -> GmailMessage:
+def mark_message_read(service: Any, message_id: str, user_id: str = "me") -> None:
+    """Remove the UNREAD label from a Gmail message."""
+    service.users().messages().modify(
+        userId=user_id,
+        id=message_id,
+        body={"removeLabelIds": ["UNREAD"]},
+    ).execute()
+
+
+def _save_attachment_part(
+    service: Any,
+    message_id: str,
+    user_id: str,
+    part: Dict[str, Any],
+    target_dir: Optional[Path],
+) -> Optional[str]:
+    filename = (part.get("filename") or "").strip()
+    if not filename:
+        return None
+    target_dir = target_dir or Path(".")
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    data = part.get("data")
+    attachment_id = part.get("attachment_id")
+
+    raw_bytes: Optional[bytes] = None
+    if attachment_id:
+        resp = (
+            service.users()
+            .messages()
+            .attachments()
+            .get(userId=user_id, messageId=message_id, id=attachment_id)
+            .execute()
+        )
+        payload_data = (resp or {}).get("data")
+        if payload_data:
+            raw_bytes = base64.urlsafe_b64decode(payload_data.encode("utf-8"))
+    elif data:
+        raw_bytes = base64.urlsafe_b64decode(data.encode("utf-8"))
+
+    if not raw_bytes:
+        return None
+
+    from app.attachments import save_attachment_bytes
+
+    saved = save_attachment_bytes(message_id, filename, raw_bytes)
+    return str(saved)
+
+
+def fetch_message(
+    service: Any,
+    message_id: str,
+    user_id: str = "me",
+    download_attachments: bool = False,
+    attachment_dir: Optional[Path] = None,
+) -> GmailMessage:
     msg = service.users().messages().get(userId=user_id, id=message_id, format="full").execute()
     payload = msg.get("payload") or {}
     headers = _header_map(payload.get("headers") or [])
 
-    body, attachments = _extract_body_and_attachments(payload)
+    body, attachment_parts = _extract_body_and_attachment_parts(payload)
+    attachments = [p.get("filename", "") for p in attachment_parts if p.get("filename")]
+    attachment_paths: List[str] = []
+
+    if download_attachments and attachment_parts:
+        for part in attachment_parts:
+            try:
+                path = _save_attachment_part(
+                    service=service,
+                    message_id=msg.get("id") or message_id,
+                    user_id=user_id,
+                    part=part,
+                    target_dir=attachment_dir,
+                )
+                if path:
+                    attachment_paths.append(path)
+            except Exception:
+                # Best-effort download; continue even if one attachment fails.
+                continue
+
     if not body:
         body = (msg.get("snippet") or "").strip()
 
@@ -183,5 +265,5 @@ def fetch_message(service: Any, message_id: str, user_id: str = "me") -> GmailMe
         date=headers.get("date", ""),
         body=body,
         attachments=attachments,
+        attachment_paths=attachment_paths,
     )
-

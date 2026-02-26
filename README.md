@@ -13,6 +13,9 @@ AI-assisted warranty claim processing with human-in-the-loop review, policy retr
 - Multi-provider LLM support: Ollama, Groq, Gemini, OpenAI.
 - SQLite claim history plus generated review packets, drafts, and labels.
 - Deterministic policy checks (warranty window, exclusions, requirements) before LLM reasoning.
+- Durable LangGraph checkpoints in SQLite (resume after restart).
+- Optional real outbound delivery (Gmail API or SMTP) with idempotent send guards.
+- Attachment pipeline with best-effort text extraction and optional OCR for images.
 
 ## Quick Start
 
@@ -48,6 +51,8 @@ You can switch modes later in the sidebar.
 
 Tokens and secrets are saved locally under `outbox/` and are ignored by git.
 
+When Gmail outbound mode is enabled in the sidebar, customer responses are also sent through the connected Gmail account.
+
 ## Workflow
 
 1. `ingest`: load email from `data/inbox`.
@@ -77,6 +82,12 @@ reports/        Reporting templates (generated outputs are not committed)
 - Use the sidebar button Manage Policies to upload your own policy documents.
 - Uploaded policies are stored locally under `outbox/policies` and indexed into ChromaDB.
 
+## Attachments And OCR
+
+- Gmail attachments are downloaded to `outbox/attachments/<message_id>/`.
+- The workflow extracts text from `.txt/.md/.pdf/.json/.csv` attachments.
+- Image OCR is supported when `pytesseract` and system Tesseract are available (`tesseract --version`).
+
 ## Development Commands
 
 ```bash
@@ -100,6 +111,8 @@ Use `.env` (copied from `.env.example`):
 - `OPENAI_API_KEY`, `OPENAI_MODEL`
 - `EMBEDDING_MODE` (`hash` recommended for deterministic local setup)
 - `EMBEDDING_MODEL`
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_USE_TLS`, `SMTP_FROM` (if using SMTP outbound)
+- `EMAIL_FROM` (fallback sender identity)
 
 ## Professional Repo Standards
 
