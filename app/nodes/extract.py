@@ -8,10 +8,10 @@ import json
 import os
 import re
 from typing import List, Optional, Dict, Any, Tuple
-from pathlib import Path
 from datetime import datetime
 from app.state import ClaimState, ExtractedFields
 from app.llm import get_llm
+from app.product_catalog import load_products_catalog
 
 
 EXTRACTION_PROMPT = """You are extracting warranty claim information from an email for HairTech Industries.
@@ -51,24 +51,12 @@ Extract and respond with ONLY a JSON object in this exact format:
 
 Required fields for a complete claim: customer_name, customer_email or customer_address, product_name, purchase_date, issue_description"""
 
-BASE_DIR = Path(__file__).parent.parent.parent
-PRODUCTS_FILE = BASE_DIR / "data" / "products.json"
-
-_PRODUCTS_CACHE: Optional[List[Dict[str, Any]]] = None
-
-
 def _load_products() -> List[Dict[str, Any]]:
-    global _PRODUCTS_CACHE
-    if _PRODUCTS_CACHE is not None:
-        return _PRODUCTS_CACHE
     try:
-        with open(PRODUCTS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        _PRODUCTS_CACHE = data.get("products", []) or []
-        return _PRODUCTS_CACHE
+        data = load_products_catalog()
+        return data.get("products", []) or []
     except Exception:
-        _PRODUCTS_CACHE = []
-        return _PRODUCTS_CACHE
+        return []
 
 
 def _norm(text: str) -> str:

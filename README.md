@@ -38,10 +38,12 @@ streamlit run ui/streamlit_app.py
 
 On first run, the app opens a Setup Wizard:
 
-- Demo mode: runs on `data/inbox` with deterministic heuristics (no external LLM required).
-- Gmail mode: connects to a real Gmail mailbox via OAuth and processes live messages.
+- Free Demo (Local): runs on `data/inbox` with deterministic heuristics (no external LLM required).
+- Enterprise Setup: configures database path, mailbox connection, product catalog source, policy source, and outbound delivery.
 
 You can switch modes later in the sidebar.
+
+Detailed guide: see `PRODUCTION_ONBOARDING.md`.
 
 ## Gmail Connection
 
@@ -82,6 +84,11 @@ reports/        Reporting templates (generated outputs are not committed)
 - Use the sidebar button Manage Policies to upload your own policy documents.
 - Uploaded policies are stored locally under `outbox/policies` and indexed into ChromaDB.
 
+## Product Catalog Uploads
+
+- Use the sidebar button Manage Products to switch demo/uploaded product catalogs.
+- Uploaded catalogs are stored locally under `outbox/products/products.json`.
+
 ## Attachments And OCR
 
 - Gmail attachments are downloaded to `outbox/attachments/<message_id>/`.
@@ -99,6 +106,9 @@ python index_db.py
 
 # Evaluate against labeled test set
 python evaluate.py
+
+# Generate 20 additional demo claims (+ non-claim/spam variants)
+python app/main.py --generate-demo 20
 ```
 
 ## Configuration
@@ -111,6 +121,8 @@ Use `.env` (copied from `.env.example`):
 - `OPENAI_API_KEY`, `OPENAI_MODEL`
 - `EMBEDDING_MODE` (`hash` recommended for deterministic local setup)
 - `EMBEDDING_MODEL`
+- `CLAIMS_DB_PATH` (optional SQLite DB override)
+- `PRODUCTS_FILE` (optional product catalog path override)
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_USE_TLS`, `SMTP_FROM` (if using SMTP outbound)
 - `EMAIL_FROM` (fallback sender identity)
 
@@ -123,7 +135,7 @@ Use `.env` (copied from `.env.example`):
 
 ## Status
 
-- Last repository refresh: `2026-02-25`
+- Last repository refresh: `2026-02-26`
 - Primary branch: `main`
 - Remote: `https://github.com/Sasidhar-7302/Claims_Agent`
 

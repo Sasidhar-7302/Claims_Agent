@@ -6,18 +6,26 @@ Uses SQLite for lightweight, file-based persistence.
 
 import sqlite3
 import json
+import os
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Tuple
 
 BASE_DIR = Path(__file__).parent.parent
-DB_PATH = BASE_DIR / "outbox" / "claims.db"
+DEFAULT_DB_PATH = BASE_DIR / "outbox" / "claims.db"
+
+
+def get_db_path() -> Path:
+    """Return active SQLite DB path (env override supported)."""
+    configured = (os.getenv("CLAIMS_DB_PATH") or "").strip()
+    return Path(configured) if configured else DEFAULT_DB_PATH
 
 
 def get_connection():
     """Get a database connection."""
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
+    db_path = get_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     return conn
 

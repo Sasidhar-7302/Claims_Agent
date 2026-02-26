@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from app.state import create_initial_state
 from app.graph import compile_workflow
 from app.database import save_claim, get_all_processed_email_ids
+from app.demo_data import generate_demo_emails, remove_generated_demo_emails
 
 
 # Paths
@@ -223,10 +224,37 @@ def main():
         default=10,
         help="Polling interval in seconds for --watch"
     )
+
+    parser.add_argument(
+        "--generate-demo",
+        type=int,
+        default=0,
+        help="Generate N additional demo claim emails (also creates non-claim/spam variants)."
+    )
+
+    parser.add_argument(
+        "--clear-generated-demo",
+        action="store_true",
+        help="Remove generated demo emails (demo_gen_*.json)."
+    )
     
     args = parser.parse_args()
     
-    if args.watch:
+    if args.clear_generated_demo:
+        deleted = remove_generated_demo_emails(INBOX_DIR)
+        print(f"Removed {deleted} generated demo emails from {INBOX_DIR}")
+    elif args.generate_demo > 0:
+        claim_count = max(args.generate_demo, 1)
+        non_claim_count = max(claim_count // 3, 1)
+        spam_count = max(claim_count // 3, 1)
+        created = generate_demo_emails(
+            inbox_dir=INBOX_DIR,
+            claim_count=claim_count,
+            non_claim_count=non_claim_count,
+            spam_count=spam_count,
+        )
+        print(f"Generated {len(created)} demo emails in {INBOX_DIR}")
+    elif args.watch:
         watch_inbox(auto_approve=args.auto_approve, interval=args.interval)
     elif args.list:
         print("\nEmails in inbox:")

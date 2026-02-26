@@ -5,22 +5,16 @@ Deterministically maps product names to product IDs and policy files.
 """
 
 import json
-from pathlib import Path
 from typing import Optional, Tuple
 from app.state import ClaimState
 from app.vector_store import get_policies_dir, get_policy_index_file
-
-
-# Load product catalog
-BASE_DIR = Path(__file__).parent.parent.parent
-PRODUCTS_FILE = BASE_DIR / "data" / "products.json"
+from app.product_catalog import load_products_catalog
 
 
 def load_products() -> dict:
     """Load the product catalog."""
     try:
-        with open(PRODUCTS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        return load_products_catalog()
     except Exception as e:
         print(f"Error loading products: {e}")
         return {"products": []}

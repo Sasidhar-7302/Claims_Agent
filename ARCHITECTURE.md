@@ -13,6 +13,7 @@ This project is a human-in-the-loop warranty claims processing system.
 - `app/checkpointing.py`: durable LangGraph checkpoint persistence (SQLite).
 - `app/attachments.py`: attachment storage + text extraction/OCR helpers.
 - `app/policy_manager.py`: policy document upload ingestion and index.json management.
+- `app/product_catalog.py`: product catalog path selection, load/save, schema validation.
 - `app/integrations/gmail.py`: Gmail OAuth + message fetch (inbound).
 - `app/integrations/outbound_email.py`: idempotent outbound dispatch via Gmail API or SMTP.
 
@@ -34,6 +35,7 @@ This project is a human-in-the-loop warranty claims processing system.
 ## Data and Outputs
 
 - Input fixtures: `data/inbox`, `data/policies`, `data/products.json`.
+- Configurable enterprise sources: `outbox/policies/*`, `outbox/products/products.json`, `CLAIMS_DB_PATH`.
 - Runtime artifacts: `outbox/` (intentionally ignored by git).
 - Evaluation fixtures: `data/testset.jsonl`.
 

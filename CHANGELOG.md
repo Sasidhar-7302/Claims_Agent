@@ -12,6 +12,10 @@ All notable repository-level changes are documented here.
 - Expanded UI onboarding/sidebar settings for outbound mode and durable checkpoint visibility.
 - Added tests for attachment extraction and outbound idempotency behavior.
 - Updated README/ARCHITECTURE/.env docs for production configuration.
+- Added free-demo data generation controls and CLI flags for synthetic inbox expansion.
+- Added product catalog management (`demo` vs `uploaded`) with schema validation and onboarding wiring.
+- Added enterprise onboarding checklist covering database path, mailbox, products, policies, outbound mode, and LLM mode.
+- Added `PRODUCTION_ONBOARDING.md` with phase-by-phase rollout instructions.
 
 ## 2026-02-25
 

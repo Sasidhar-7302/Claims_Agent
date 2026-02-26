@@ -100,7 +100,8 @@ class SimpleHashEmbeddingFunction:
 def get_embedding_function():
     """Select an embedding function based on environment or availability."""
     mode = os.getenv("EMBEDDING_MODE", "").strip().lower()
-    if mode == "hash":
+    # Default to hash embeddings so local demo mode works without model downloads.
+    if mode in ("", "hash"):
         return SimpleHashEmbeddingFunction()
 
     try:
@@ -138,6 +139,13 @@ class WarrantyVectorStore:
                 )
             else:
                 raise
+
+    def _reopen_collection(self) -> None:
+        """Re-open the Chroma collection handle (recovers from stale/not-found handles)."""
+        self.collection = self.client.get_or_create_collection(
+            name="warranty_policies",
+            embedding_function=self.embedding_fn
+        )
 
     def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
         """Simple sliding window chunking."""
@@ -229,9 +237,15 @@ class WarrantyVectorStore:
 
     def ensure_indexed(self) -> int:
         """Ensure the policy store is indexed."""
-        if self.collection.count() == 0:
+        try:
+            count = self.collection.count()
+        except Exception:
+            self._reopen_collection()
+            count = self.collection.count()
+
+        if count == 0:
             return self.index_policies(force_reindex=False)
-        return self.collection.count()
+        return count
 
     def query(
         self,
@@ -252,11 +266,21 @@ class WarrantyVectorStore:
         elif product_id:
             where = {"product_id": product_id}
 
-        results = self.collection.query(
-            query_texts=[query_text],
-            n_results=n_results,
-            where=where
-        )
+        try:
+            results = self.collection.query(
+                query_texts=[query_text],
+                n_results=n_results,
+                where=where
+            )
+        except Exception:
+            self._reopen_collection()
+            if self.collection.count() == 0:
+                self.index_policies(force_reindex=False)
+            results = self.collection.query(
+                query_texts=[query_text],
+                n_results=n_results,
+                where=where
+            )
         
         # Flatten results
         output = []

@@ -9,6 +9,7 @@ import os
 import sys
 import json
 import base64
+import shutil
 import streamlit as st
 from pathlib import Path
 from datetime import datetime
@@ -226,121 +227,302 @@ def is_out_of_credits(error: Exception) -> bool:
 
 
 def render_onboarding():
-    """First-run setup wizard (demo mode or live integrations)."""
+    """Guided setup for local demo and enterprise rollout."""
+    from app.database import get_db_path
+    from app.demo_data import generate_demo_emails, remove_generated_demo_emails
+    from app.product_catalog import get_products_file, load_products_catalog, save_products_catalog, validate_products_catalog
+    from app.vector_store import get_policy_index_file
+
     st.markdown("## Setup Wizard")
-    st.caption("Configure demo mode or connect a real mailbox and policies. Settings are stored locally in SQLite.")
+    st.caption("Use Free Demo for zero-cost local usage, or Enterprise Setup for real mailbox and production data wiring.")
 
-    mode = st.radio(
-        "Choose a starting mode",
-        ["Demo (recommended)", "Connect Gmail"],
-        help="Demo mode runs without any API keys. Gmail mode requires Google OAuth credentials.",
-    )
+    tab_demo, tab_enterprise = st.tabs(["Free Demo (Local)", "Enterprise Setup"])
 
-    st.markdown("---")
-    st.markdown("### Policy Source")
-    policy_source = st.radio(
-        "Policies",
-        ["Use built-in demo policies", "Upload my own policies (recommended for real use)"],
-    )
+    with tab_demo:
+        inbox_files = list(INBOX_DIR.glob("*.json"))
+        generated_files = list(INBOX_DIR.glob("demo_gen_*.json"))
+        policy_count = 0
+        try:
+            index_file = DATA_DIR / "policies" / "index.json"
+            if index_file.exists():
+                payload = json.loads(index_file.read_text(encoding="utf-8"))
+                policy_count = len(payload.get("policies", []) or [])
+        except Exception:
+            policy_count = 0
 
-    if policy_source.startswith("Use built-in"):
-        set_setting("policy.source", "demo")
-    else:
-        set_setting("policy.source", "uploaded")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.metric("Inbox emails", len(inbox_files))
+        with c2:
+            st.metric("Generated demos", len(generated_files))
+        with c3:
+            st.metric("Policies", policy_count)
 
-    st.markdown("---")
-    st.markdown("### LLM Mode")
-    st.caption("You can change providers later in the sidebar.")
-    if st.button("Enable Demo LLM (no external calls)", type="primary", use_container_width=True):
-        os.environ["DEMO_MODE"] = "true"
-        st.session_state.llm_provider = "Demo (No LLM)"
-        st.session_state.llm_active_config = {"provider": "demo", "api_key": "", "model": ""}
-        st.session_state.llm_available = True
-        st.session_state.llm_error = ""
-        set_setting("llm.provider", "demo")
-        st.success("Demo mode enabled.")
+        st.markdown("### Demo Dataset Controls")
+        d1, d2 = st.columns(2)
+        with d1:
+            if st.button("Generate More Demo Emails", use_container_width=True):
+                created = generate_demo_emails()
+                st.success(f"Generated {len(created)} demo emails.")
+                st.session_state.emails = load_emails()
+        with d2:
+            if st.button("Remove Generated Demo Emails", use_container_width=True):
+                deleted = remove_generated_demo_emails()
+                st.success(f"Removed {deleted} generated demo emails.")
+                st.session_state.emails = load_emails()
 
-    st.markdown("---")
-    if mode.startswith("Demo"):
-        st.info("Demo mode uses local sample inbox and deterministic heuristics so it always works.")
-        if st.button("Finish Setup (Demo)", use_container_width=True, type="primary"):
+        st.markdown("### LLM Choice (Free)")
+        st.caption("`Demo` is fully local and deterministic. `Ollama` is local-model mode if installed.")
+        llm_choice = st.radio(
+            "Model mode",
+            ["Demo (no external model)", "Ollama local model"],
+            key="onboard_demo_llm_choice",
+        )
+        if st.button("Apply Demo LLM Choice", use_container_width=True):
+            if llm_choice.startswith("Demo"):
+                os.environ["DEMO_MODE"] = "true"
+                st.session_state.llm_provider = "Demo (No LLM)"
+                st.session_state.llm_active_config = {"provider": "demo", "api_key": "", "model": ""}
+                st.session_state.llm_available = True
+                st.session_state.llm_error = ""
+                set_setting("llm.provider", "demo")
+                st.success("Demo LLM mode enabled.")
+            else:
+                try:
+                    from app.llm import get_llm
+
+                    llm = get_llm(provider="ollama", force_new=True)
+                    os.environ["DEMO_MODE"] = "false"
+                    st.session_state.llm_provider = "Ollama (Local)"
+                    st.session_state.llm_active_config = {"provider": "ollama", "api_key": "", "model": llm.model_name}
+                    st.session_state.llm_available = True
+                    st.session_state.llm_error = ""
+                    set_setting("llm.provider", "ollama")
+                    st.success(f"Ollama enabled with model {llm.model_name}.")
+                except Exception as e:
+                    st.error(f"Could not enable Ollama: {e}")
+
+        st.markdown("---")
+        if st.button("Finish Free Demo Setup", type="primary", use_container_width=True):
             set_setting("app.mode", "demo")
             set_setting("email.source", "local")
             set_setting("email.outbound_mode", "manual")
+            apply_policy_source("demo")
+            apply_product_source("demo")
+            os.environ["DEMO_MODE"] = "true"
             set_setting("app.onboarding_complete", True)
-            if os.getenv("DEMO_MODE", "false").strip().lower() != "true":
-                os.environ["DEMO_MODE"] = "true"
-                st.session_state.llm_active_config = {"provider": "demo", "api_key": "", "model": ""}
-                st.session_state.llm_available = True
-            st.session_state.workflow_stage = "select"
-            st.rerun()
-        return
-
-    st.markdown("### Gmail Connection")
-    set_setting("app.mode", "gmail")
-    set_setting("email.source", "gmail")
-
-    outbound_choice = st.selectbox(
-        "Outbound response delivery",
-        ["Gmail API (recommended)", "Manual (draft only)", "SMTP"],
-        index=0,
-        key="onboard_outbound_mode",
-    )
-    outbound_map = {
-        "Gmail API (recommended)": "gmail_api",
-        "Manual (draft only)": "manual",
-        "SMTP": "smtp",
-    }
-    set_setting("email.outbound_mode", outbound_map[outbound_choice])
-
-    client_path, token_path = get_gmail_paths()
-    uploaded_secret = st.file_uploader("Upload Gmail client secrets JSON", type=["json"], key="onboard_gmail_client_secret")
-    if uploaded_secret is not None:
-        try:
-            client_path.parent.mkdir(parents=True, exist_ok=True)
-            client_path.write_bytes(uploaded_secret.getvalue())
-            set_setting("gmail.client_secrets_path", str(client_path))
-            st.success("Saved client secrets locally.")
-        except Exception as e:
-            st.error(f"Could not save client secrets: {e}")
-
-    query_value = st.text_input(
-        "Gmail query",
-        value=(get_setting("gmail.query", "is:unread") or "is:unread"),
-        help="Example: label:claims is:unread",
-        key="onboard_gmail_query",
-    )
-    if st.button("Save Query", use_container_width=True):
-        set_setting("gmail.query", query_value)
-        st.success("Query saved.")
-
-    if st.button("Connect Gmail", type="primary", use_container_width=True):
-        try:
-            from app.integrations.gmail import get_gmail_service
-
-            if not client_path.exists():
-                st.error("Upload a Gmail client secrets JSON first.")
-            else:
-                service = get_gmail_service(client_path, token_path)
-                st.session_state.gmail_service = service
-                set_setting("gmail.token_path", str(token_path))
-                st.success("Gmail connected.")
-        except Exception as e:
-            st.error(f"Gmail connection failed: {e}")
-
-    if st.session_state.get("gmail_service") is not None:
-        st.success("Gmail status: connected")
-        if st.button("Finish Setup (Gmail)", use_container_width=True, type="primary"):
-            set_setting("app.onboarding_complete", True)
+            set_setting("db.path", str(get_db_path()))
             st.session_state.workflow_stage = "select"
             st.session_state.emails = load_emails()
             st.rerun()
 
-    st.markdown("---")
-    if st.button("Back to Demo Setup", use_container_width=True):
-        set_setting("email.source", "local")
-        st.session_state.workflow_stage = "onboarding"
-        st.rerun()
+    with tab_enterprise:
+        st.markdown("### 1. Claims Database")
+        db_value = st.text_input(
+            "SQLite path for claims DB",
+            value=(get_setting("db.path", str(get_db_path())) or str(get_db_path())),
+            help="Use local path on your PC/server, e.g. outbox/claims_prod.db",
+            key="onboard_enterprise_db_path",
+        )
+        if st.button("Apply Database Path", use_container_width=True):
+            path = (db_value or "").strip()
+            if not path:
+                st.error("Database path cannot be empty.")
+            else:
+                os.environ["CLAIMS_DB_PATH"] = path
+                if not ENV_PATH.exists():
+                    ENV_PATH.write_text("", encoding="utf-8")
+                set_key(str(ENV_PATH), "CLAIMS_DB_PATH", path)
+                set_setting("db.path", path)
+                st.success(f"Database path set to {path}")
+
+        st.markdown("---")
+        st.markdown("### 2. Product Catalog")
+        product_source_choice = st.radio(
+            "Product source",
+            ["Use demo product catalog", "Use uploaded product catalog"],
+            index=0 if (get_setting("product.source", "demo") or "demo") == "demo" else 1,
+            key="onboard_enterprise_product_source",
+        )
+        selected_product_source = "demo" if product_source_choice.startswith("Use demo") else "uploaded"
+        if st.button("Apply Product Source", use_container_width=True):
+            apply_product_source(selected_product_source)
+            st.success(f"Product source set to {selected_product_source}.")
+
+        if selected_product_source == "uploaded":
+            st.caption(f"Active products file: {get_products_file()}")
+            uploaded_products = st.file_uploader("Upload products.json", type=["json"], key="onboard_products_upload")
+            if uploaded_products is not None:
+                try:
+                    parsed = json.loads(uploaded_products.getvalue().decode("utf-8", errors="replace"))
+                    errors = validate_products_catalog(parsed)
+                    if errors:
+                        st.error("Uploaded product catalog is invalid:")
+                        for err in errors:
+                            st.write(f"- {err}")
+                    else:
+                        save_products_catalog(parsed, get_products_file())
+                        st.success("Uploaded product catalog saved.")
+                except Exception as e:
+                    st.error(f"Could not parse uploaded product catalog: {e}")
+            if st.button("Open Product Management", use_container_width=True):
+                st.session_state.workflow_stage = "products"
+                st.rerun()
+
+        st.markdown("---")
+        st.markdown("### 3. Policy Source")
+        policy_source_choice = st.radio(
+            "Policies",
+            ["Use demo policies", "Use uploaded policies"],
+            index=0 if (get_setting("policy.source", "demo") or "demo") == "demo" else 1,
+            key="onboard_enterprise_policy_source",
+        )
+        selected_policy_source = "demo" if policy_source_choice.startswith("Use demo") else "uploaded"
+        if st.button("Apply Policy Source", use_container_width=True):
+            apply_policy_source(selected_policy_source)
+            st.success(f"Policy source set to {selected_policy_source}.")
+        if st.button("Open Policy Management", use_container_width=True):
+            st.session_state.workflow_stage = "policies"
+            st.rerun()
+
+        st.markdown("---")
+        st.markdown("### 4. Mailbox + Outbound")
+        inbox_mode = st.selectbox(
+            "Inbox source",
+            ["Local folder", "Gmail API"],
+            index=0 if get_email_source() != "gmail" else 1,
+            key="onboard_enterprise_inbox_source",
+        )
+        selected_inbox_source = "local" if inbox_mode == "Local folder" else "gmail"
+        set_setting("email.source", selected_inbox_source)
+
+        outbound_choice = st.selectbox(
+            "Outbound response delivery",
+            ["Manual (draft only)", "Gmail API", "SMTP"],
+            index=["manual", "gmail_api", "smtp"].index(get_outbound_mode())
+            if get_outbound_mode() in ["manual", "gmail_api", "smtp"]
+            else 0,
+            key="onboard_enterprise_outbound_mode",
+        )
+        outbound_map = {
+            "Manual (draft only)": "manual",
+            "Gmail API": "gmail_api",
+            "SMTP": "smtp",
+        }
+        selected_outbound = outbound_map[outbound_choice]
+        set_setting("email.outbound_mode", selected_outbound)
+
+        if selected_inbox_source == "gmail" or selected_outbound == "gmail_api":
+            st.caption("Gmail OAuth requires Installed App credentials from Google Cloud Console.")
+            client_path, token_path = get_gmail_paths()
+            uploaded_secret = st.file_uploader(
+                "Upload Gmail client secrets JSON",
+                type=["json"],
+                key="onboard_enterprise_gmail_secret",
+            )
+            if uploaded_secret is not None:
+                try:
+                    client_path.parent.mkdir(parents=True, exist_ok=True)
+                    client_path.write_bytes(uploaded_secret.getvalue())
+                    set_setting("gmail.client_secrets_path", str(client_path))
+                    st.success("Saved Gmail client secrets.")
+                except Exception as e:
+                    st.error(f"Could not save Gmail client secrets: {e}")
+
+            query_value = st.text_input(
+                "Gmail query",
+                value=(get_setting("gmail.query", "is:unread") or "is:unread"),
+                key="onboard_enterprise_gmail_query",
+            )
+            if st.button("Save Gmail Query", use_container_width=True):
+                set_setting("gmail.query", query_value)
+                st.success("Gmail query saved.")
+
+            if st.button("Connect Gmail", type="primary", use_container_width=True):
+                try:
+                    from app.integrations.gmail import get_gmail_service
+
+                    if not client_path.exists():
+                        st.error("Upload Gmail client secrets first.")
+                    else:
+                        service = get_gmail_service(client_path, token_path)
+                        st.session_state.gmail_service = service
+                        set_setting("gmail.token_path", str(token_path))
+                        st.success("Gmail connected.")
+                except Exception as e:
+                    st.error(f"Gmail connection failed: {e}")
+
+        if selected_outbound == "smtp":
+            st.caption("Set SMTP variables in `.env`: SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM.")
+
+        st.markdown("---")
+        st.markdown("### 5. LLM Mode")
+        llm_mode = st.radio(
+            "Choose processing mode",
+            ["Demo deterministic", "Ollama local", "API provider (configure in sidebar)"],
+            key="onboard_enterprise_llm_mode",
+        )
+        if st.button("Apply LLM Mode", use_container_width=True):
+            if llm_mode.startswith("Demo"):
+                os.environ["DEMO_MODE"] = "true"
+                st.session_state.llm_active_config = {"provider": "demo", "api_key": "", "model": ""}
+                st.session_state.llm_available = True
+                st.success("Demo deterministic mode enabled.")
+            elif llm_mode.startswith("Ollama"):
+                try:
+                    from app.llm import get_llm
+
+                    llm = get_llm(provider="ollama", force_new=True)
+                    os.environ["DEMO_MODE"] = "false"
+                    st.session_state.llm_active_config = {"provider": "ollama", "api_key": "", "model": llm.model_name}
+                    st.session_state.llm_available = True
+                    st.success(f"Ollama enabled with model {llm.model_name}.")
+                except Exception as e:
+                    st.error(f"Ollama unavailable: {e}")
+            else:
+                os.environ["DEMO_MODE"] = "false"
+                st.info("Use sidebar LLM settings to configure OpenAI/Groq/Gemini keys.")
+
+        st.markdown("---")
+        st.markdown("### Enterprise Readiness Checklist")
+        catalog = load_products_catalog()
+        product_errors = validate_products_catalog(catalog)
+        product_ok = bool((catalog or {}).get("products")) and not product_errors
+
+        policy_index_file = get_policy_index_file()
+        policy_ok = False
+        try:
+            if policy_index_file.exists():
+                policy_payload = json.loads(policy_index_file.read_text(encoding="utf-8"))
+                policy_ok = len(policy_payload.get("policies", []) or []) > 0
+        except Exception:
+            policy_ok = False
+
+        mail_ok = selected_inbox_source != "gmail" or st.session_state.get("gmail_service") is not None
+        db_ok = bool((db_value or "").strip())
+        if selected_outbound == "gmail_api":
+            outbound_ok = st.session_state.get("gmail_service") is not None
+        elif selected_outbound == "smtp":
+            outbound_ok = bool((os.getenv("SMTP_HOST") or "").strip())
+        else:
+            outbound_ok = True
+
+        st.write(f"{'✅' if db_ok else '❌'} Database path configured")
+        st.write(f"{'✅' if product_ok else '❌'} Product catalog valid")
+        st.write(f"{'✅' if policy_ok else '❌'} Policy index has entries")
+        st.write(f"{'✅' if mail_ok else '❌'} Mailbox connection ready")
+        st.write(f"{'✅' if outbound_ok else '❌'} Outbound delivery configured")
+
+        if st.button("Finish Enterprise Setup", type="primary", use_container_width=True):
+            if not all([db_ok, product_ok, policy_ok, mail_ok, outbound_ok]):
+                st.error("Complete all checklist items before finishing setup.")
+            else:
+                set_setting("app.mode", "enterprise")
+                set_setting("app.onboarding_complete", True)
+                st.session_state.workflow_stage = "select"
+                st.session_state.emails = load_emails()
+                st.success("Enterprise setup completed.")
+                st.rerun()
 
 
 def apply_policy_source(source: str) -> None:
@@ -362,6 +544,116 @@ def apply_policy_source(source: str) -> None:
         set_setting("policy.source", "demo")
 
     reset_vector_store()
+
+
+def apply_product_source(source: str) -> None:
+    """Switch between demo and uploaded product catalogs."""
+    from app.product_catalog import DEFAULT_PRODUCTS_FILE
+
+    source = (source or "").strip().lower()
+    if source == "uploaded":
+        target = OUTBOX_DIR / "products" / "products.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not target.exists() and DEFAULT_PRODUCTS_FILE.exists():
+            shutil.copyfile(DEFAULT_PRODUCTS_FILE, target)
+        os.environ["PRODUCTS_FILE"] = str(target)
+        set_setting("product.source", "uploaded")
+    else:
+        os.environ.pop("PRODUCTS_FILE", None)
+        set_setting("product.source", "demo")
+
+
+def render_product_management():
+    """Upload/replace product catalog for production onboarding."""
+    from app.product_catalog import (
+        DEFAULT_PRODUCTS_FILE,
+        get_products_file,
+        load_products_catalog,
+        save_products_catalog,
+        validate_products_catalog,
+    )
+
+    st.markdown("## Product Catalog Management")
+
+    current_source = get_setting("product.source", "demo") or "demo"
+    choice = st.radio(
+        "Product source",
+        ["Demo (repo products)", "Uploaded (local outbox)"],
+        index=0 if current_source == "demo" else 1,
+        help="Uploaded products are stored locally and ignored by git.",
+    )
+    source = "demo" if choice.startswith("Demo") else "uploaded"
+    if source != current_source:
+        apply_product_source(source)
+        st.success("Product source updated.")
+
+    products_file = get_products_file()
+    catalog = load_products_catalog()
+    products = catalog.get("products", []) or []
+    errors = validate_products_catalog(catalog)
+
+    st.caption(f"Products file: {products_file}")
+    st.caption(f"Product count: {len(products)}")
+    if errors:
+        st.error("Catalog validation failed:")
+        for err in errors:
+            st.write(f"- {err}")
+    else:
+        st.success("Catalog schema is valid.")
+
+    if products:
+        rows = []
+        for p in products:
+            rows.append(
+                {
+                    "product_id": p.get("product_id", ""),
+                    "name": p.get("name", ""),
+                    "category": p.get("category", ""),
+                    "policy_file": p.get("policy_file", ""),
+                    "aliases": ", ".join(p.get("aliases", []) or []),
+                }
+            )
+        st.dataframe(rows, use_container_width=True)
+    else:
+        st.info("No products found in current catalog.")
+
+    st.markdown("---")
+    if products_file.exists():
+        st.download_button(
+            "Download current product catalog",
+            data=products_file.read_text(encoding="utf-8"),
+            file_name=products_file.name,
+            mime="application/json",
+            use_container_width=True,
+        )
+
+    uploaded = st.file_uploader("Upload product catalog JSON", type=["json"], key="product_catalog_upload")
+    if uploaded is not None:
+        try:
+            parsed = json.loads(uploaded.getvalue().decode("utf-8", errors="replace"))
+            upload_errors = validate_products_catalog(parsed)
+            if upload_errors:
+                st.error("Uploaded catalog is invalid:")
+                for err in upload_errors:
+                    st.write(f"- {err}")
+            else:
+                saved = save_products_catalog(parsed, products_file)
+                st.success(f"Saved product catalog to {saved}")
+        except Exception as e:
+            st.error(f"Could not parse JSON: {e}")
+
+    if source == "uploaded" and st.button("Restore from demo catalog", use_container_width=True):
+        try:
+            demo_catalog = json.loads(DEFAULT_PRODUCTS_FILE.read_text(encoding="utf-8"))
+            save_products_catalog(demo_catalog, products_file)
+            st.success("Restored uploaded catalog from demo data.")
+        except Exception as e:
+            st.error(f"Could not restore demo catalog: {e}")
+
+    st.markdown("---")
+    if st.button("Back", use_container_width=True):
+        st.session_state.workflow_stage = "select"
+        st.rerun()
 
 
 def render_policy_management():
@@ -419,8 +711,10 @@ def render_policy_management():
     # Load products for mapping.
     products = []
     try:
-        with open(DATA_DIR / "products.json", "r", encoding="utf-8") as f:
-            products = (json.load(f) or {}).get("products", []) or []
+        from app.product_catalog import load_products_catalog, get_products_file
+
+        products = (load_products_catalog() or {}).get("products", []) or []
+        st.caption(f"Using product catalog: {get_products_file()}")
     except Exception:
         products = []
 
@@ -528,6 +822,10 @@ if "onboarding_checked" not in st.session_state:
 if "policy_env_applied" not in st.session_state:
     apply_policy_source(get_setting("policy.source", "demo") or "demo")
     st.session_state.policy_env_applied = True
+
+if "product_env_applied" not in st.session_state:
+    apply_product_source(get_setting("product.source", "demo") or "demo")
+    st.session_state.product_env_applied = True
 
 if get_email_source() == "gmail" and st.session_state.get("gmail_service") is None:
     try:
@@ -1086,6 +1384,8 @@ def render_sidebar():
         elif outbound_mode == "smtp":
             st.caption("Set SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM in .env.")
 
+        from app.database import get_db_path
+        st.caption(f"Claims DB: {get_db_path()}")
         st.caption(f"Workflow checkpoint DB: {get_checkpoint_db_path()}")
 
         st.write("**Recent Activity**")
@@ -1110,6 +1410,11 @@ def render_sidebar():
             if st.button("📋 View All History", use_container_width=True):
                 st.session_state.workflow_stage = "claim_history"
                 st.rerun()
+
+        st.markdown("---")
+        if st.button("Manage Products", use_container_width=True):
+            st.session_state.workflow_stage = "products"
+            st.rerun()
 
         st.markdown("---")
         if st.button("Manage Policies", use_container_width=True):
@@ -2262,6 +2567,8 @@ def main():
         render_onboarding()
     elif stage == "select":
         render_email_selection()
+    elif stage == "products":
+        render_product_management()
     elif stage == "policies":
         render_policy_management()
     elif stage == "processing":

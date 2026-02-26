@@ -4,10 +4,10 @@ Node 10: Return Label Generator
 Generates a mock return shipping label PDF for approved claims.
 """
 
-import json
 from pathlib import Path
 from datetime import datetime
 from app.state import ClaimState
+from app.product_catalog import load_products_catalog
 
 try:
     from reportlab.lib.pagesizes import letter
@@ -21,22 +21,20 @@ except ImportError:
 
 BASE_DIR = Path(__file__).parent.parent.parent
 OUTBOX_DIR = BASE_DIR / "outbox" / "labels"
-PRODUCTS_FILE = BASE_DIR / "data" / "products.json"
 
 
 def get_company_address() -> dict:
     """Load company return address from products.json."""
     try:
-        with open(PRODUCTS_FILE, "r") as f:
-            data = json.load(f)
-            return data.get("return_address", {
-                "name": "HairTech Industries Returns",
-                "street": "1234 Innovation Drive",
-                "city": "San Jose",
-                "state": "CA",
-                "zip": "95134",
-                "country": "USA"
-            })
+        data = load_products_catalog()
+        return data.get("return_address", {
+            "name": "HairTech Industries Returns",
+            "street": "1234 Innovation Drive",
+            "city": "San Jose",
+            "state": "CA",
+            "zip": "95134",
+            "country": "USA"
+        })
     except:
         return {
             "name": "HairTech Industries Returns",

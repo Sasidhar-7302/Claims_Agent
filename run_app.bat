@@ -37,6 +37,7 @@ IF %ERRORLEVEL% NEQ 0 (
 :: 4. Check Vector Database
 IF NOT EXIST "outbox\chroma_db" (
     echo [SETUP] Initializing Vector Database...
+    SET EMBEDDING_MODE=hash
     python index_db.py
 ) ELSE (
     echo [OK] Vector Database found.
