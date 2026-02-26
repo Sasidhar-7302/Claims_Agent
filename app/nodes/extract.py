@@ -5,8 +5,10 @@ Extracts structured warranty claim fields from email using LLM.
 """
 
 import json
+import os
 import re
-from typing import List
+from typing import List, Optional, Dict, Any, Tuple
+from pathlib import Path
 from datetime import datetime
 from app.state import ClaimState, ExtractedFields
 from app.llm import get_llm
@@ -48,6 +50,148 @@ Extract and respond with ONLY a JSON object in this exact format:
 }}
 
 Required fields for a complete claim: customer_name, customer_email or customer_address, product_name, purchase_date, issue_description"""
+
+BASE_DIR = Path(__file__).parent.parent.parent
+PRODUCTS_FILE = BASE_DIR / "data" / "products.json"
+
+_PRODUCTS_CACHE: Optional[List[Dict[str, Any]]] = None
+
+
+def _load_products() -> List[Dict[str, Any]]:
+    global _PRODUCTS_CACHE
+    if _PRODUCTS_CACHE is not None:
+        return _PRODUCTS_CACHE
+    try:
+        with open(PRODUCTS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        _PRODUCTS_CACHE = data.get("products", []) or []
+        return _PRODUCTS_CACHE
+    except Exception:
+        _PRODUCTS_CACHE = []
+        return _PRODUCTS_CACHE
+
+
+def _norm(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "")).strip().lower()
+
+
+def _find_product_in_text(text: str) -> Optional[str]:
+    """Best-effort product detection using the local product catalog."""
+    haystack = _norm(text)
+    if not haystack:
+        return None
+
+    best: Tuple[Optional[str], int] = (None, 0)
+    for product in _load_products():
+        names = [product.get("name", "")] + list(product.get("aliases", []) or [])
+        for name in names:
+            needle = _norm(name)
+            if not needle:
+                continue
+            if needle in haystack:
+                if len(needle) > best[1]:
+                    best = (product.get("name") or name, len(needle))
+
+    return best[0]
+
+
+def _extract_customer_name_from_signature(body: str) -> Optional[str]:
+    if not body:
+        return None
+    lines = [l.strip() for l in body.splitlines() if l.strip()]
+    if not lines:
+        return None
+
+    markers = ("thanks", "thank you", "sincerely", "regards", "best", "cheers")
+    for idx, line in enumerate(lines):
+        low = line.lower().strip(" :,")
+        if any(low.startswith(m) or low == m for m in markers):
+            if idx + 1 < len(lines):
+                candidate = lines[idx + 1].strip(" ,")
+                if 1 <= len(candidate) <= 60 and "@" not in candidate and not re.search(r"\d", candidate):
+                    return candidate
+    # Fallback: last line if it looks like a name.
+    tail = lines[-1].strip(" ,")
+    if 1 <= len(tail) <= 60 and "@" not in tail and not re.search(r"\d", tail):
+        return tail
+    return None
+
+
+def _extract_order_number_from_text(text: str) -> Optional[str]:
+    if not text:
+        return None
+    # Common order/confirmation formats (Amazon-like, numeric, etc.)
+    match = re.search(r"\b(order number|order|confirmation)\s*[:#]?\s*([A-Za-z0-9-]{6,})\b", text, re.IGNORECASE)
+    if match:
+        return match.group(2).strip()
+    match2 = re.search(r"\b\d{3}-\d{7}-\d{7}\b", text)
+    if match2:
+        return match2.group(0)
+    return None
+
+
+def _deterministic_extract(state: ClaimState) -> Dict[str, Any]:
+    """Deterministic extraction for demo mode and as a fallback when LLMs fail."""
+    email_body = state.get("email_body", "") or ""
+    email_from = state.get("email_from", "") or ""
+    attachments = state.get("email_attachments", []) or []
+
+    extracted: Dict[str, Any] = {
+        "customer_name": _extract_customer_name_from_signature(email_body),
+        "customer_email": None,
+        "customer_phone": extract_phone_from_text(email_body),
+        "customer_address": extract_address_from_text(email_body),
+        "product_name": _find_product_in_text(email_body),
+        "product_serial": extract_serial_from_text(email_body),
+        "purchase_date": extract_date_from_text(email_body),
+        "purchase_location": None,
+        "order_number": _extract_order_number_from_text(email_body),
+        "issue_description": None,
+        "has_proof_of_purchase": False,
+        "missing_fields": [],
+    }
+
+    # Email address fallback
+    if "@" in email_from:
+        extracted["customer_email"] = email_from.strip()
+    else:
+        match = re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", email_body)
+        if match:
+            extracted["customer_email"] = match.group(0)
+
+    # Issue description heuristic
+    issue = None
+    for line in (l.strip() for l in email_body.splitlines()):
+        if not line:
+            continue
+        low = line.lower()
+        if any(k in low for k in ["stopped working", "not working", "won't", "doesn't", "no heat", "no power", "broken", "defect"]):
+            issue = line
+            break
+    extracted["issue_description"] = issue or (email_body.strip()[:400] if email_body.strip() else None)
+
+    # Normalize known fields
+    if extracted.get("customer_phone"):
+        extracted["customer_phone"] = normalize_phone(extracted.get("customer_phone"))
+    if extracted.get("product_serial"):
+        extracted["product_serial"] = normalize_serial(extracted.get("product_serial"))
+    if extracted.get("customer_address"):
+        extracted["customer_address"] = normalize_address(extracted.get("customer_address"))
+    if extracted.get("purchase_date"):
+        extracted["purchase_date"] = normalize_date(extracted.get("purchase_date"))
+
+    # Proof of purchase
+    proof_keywords = ["receipt", "order", "confirmation", "invoice"]
+    has_proof = any(any(kw in (att or "").lower() for kw in proof_keywords) for att in attachments)
+    if not has_proof:
+        has_proof = bool(re.search(r"\b(receipt|order|confirmation|invoice|proof of purchase)\b", email_body.lower()))
+    extracted["has_proof_of_purchase"] = has_proof
+
+    # Missing fields and attachments
+    extracted["missing_fields"] = identify_missing_fields(extracted)
+    extracted["attachments"] = attachments
+
+    return extracted
 
 
 def normalize_date(date_str: str) -> str:
@@ -236,6 +380,25 @@ def extract_fields(state: ClaimState) -> ClaimState:
     
     email_body = state.get("email_body", "")
     email_from = state.get("email_from", "")
+    demo_mode = os.getenv("DEMO_MODE", "false").strip().lower() == "true"
+
+    if demo_mode:
+        extracted = _deterministic_extract(state)
+        # Calculate confidence based on completeness
+        total_fields = 10
+        filled_fields = sum(
+            1
+            for k, v in extracted.items()
+            if v and k not in ["missing_fields", "attachments", "has_proof_of_purchase"]
+        )
+        confidence = filled_fields / total_fields
+        return {
+            **state,
+            "extracted_fields": ExtractedFields(**extracted),
+            "extraction_confidence": confidence,
+            "llm_model": "demo",
+            "workflow_status": "EXTRACTED",
+        }
     
     try:
         llm = get_llm()
@@ -333,14 +496,20 @@ def extract_fields(state: ClaimState) -> ClaimState:
         }
         
     except Exception as e:
+        # Fallback to deterministic extraction instead of hard failing.
+        extracted = _deterministic_extract(state)
+        total_fields = 10
+        filled_fields = sum(
+            1
+            for k, v in extracted.items()
+            if v and k not in ["missing_fields", "attachments", "has_proof_of_purchase"]
+        )
+        confidence = filled_fields / total_fields
         return {
             **state,
-            "extracted_fields": ExtractedFields(
-                missing_fields=["extraction_failed"],
-                has_proof_of_purchase=False,
-                attachments=[]
-            ),
-            "extraction_confidence": 0.0,
+            "extracted_fields": ExtractedFields(**extracted),
+            "extraction_confidence": confidence,
+            "llm_model": "fallback-deterministic",
             "workflow_status": "EXTRACTED",
-            "error_message": f"Extraction error: {e}"
+            "error_message": f"Extraction error (used deterministic fallback): {e}",
         }

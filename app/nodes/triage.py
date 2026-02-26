@@ -5,6 +5,7 @@ Classifies emails as CLAIM, NON_CLAIM, or SPAM using LLM.
 """
 
 import json
+import os
 import re
 from app.state import ClaimState
 from app.llm import get_llm
@@ -73,6 +74,36 @@ def triage_email(state: ClaimState) -> ClaimState:
             "triage_reason": "Multiple spam indicators detected",
             "triage_confidence": 0.95,
             "workflow_status": "TRIAGED"
+        }
+
+    # Demo mode: deterministic classification without requiring an LLM.
+    demo_mode = os.getenv("DEMO_MODE", "false").strip().lower() == "true"
+    if demo_mode:
+        text = f"{email_subject}\n{email_body}".lower()
+        claim_signals = [
+            "warranty",
+            "claim",
+            "replacement",
+            "refund",
+            "return label",
+            "serial",
+            "order number",
+            "receipt",
+            "proof of purchase",
+            "stopped working",
+            "not working",
+            "won't turn on",
+            "doesn't turn on",
+            "no heat",
+            "no power",
+        ]
+        classification = "CLAIM" if any(s in text for s in claim_signals) else "NON_CLAIM"
+        return {
+            **state,
+            "triage_result": classification,
+            "triage_reason": "Demo mode heuristic classification",
+            "triage_confidence": 0.8 if classification == "CLAIM" else 0.7,
+            "workflow_status": "TRIAGED",
         }
     
     # Use LLM for classification

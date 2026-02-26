@@ -8,7 +8,7 @@ import sqlite3
 import json
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 BASE_DIR = Path(__file__).parent.parent
 DB_PATH = BASE_DIR / "outbox" / "claims.db"
@@ -95,6 +95,14 @@ def init_db():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+
     ensure_columns(cursor, {
         "product_id": "TEXT",
         "policy_id": "TEXT",
@@ -107,6 +115,95 @@ def init_db():
     
     conn.commit()
     conn.close()
+
+
+def _normalize_setting_value(value: Any) -> Tuple[str, str]:
+    """
+    Normalize an arbitrary Python value into a (type, json_string) pair.
+
+    We store everything as JSON in SQLite for simplicity.
+    """
+    if value is None:
+        return "null", "null"
+    if isinstance(value, (dict, list, str, int, float, bool)):
+        return type(value).__name__, json.dumps(value)
+    return type(value).__name__, json.dumps(str(value))
+
+
+def set_setting(key: str, value: Any) -> bool:
+    """Upsert an application setting."""
+    if not key:
+        return False
+    try:
+        init_db()
+        _unused_type, payload = _normalize_setting_value(value)
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO app_settings (key, value, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value,
+                updated_at = excluded.updated_at
+            """,
+            (key, payload, datetime.now().isoformat()),
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"[DB] Error setting app setting '{key}': {e}")
+        return False
+
+
+def get_setting(key: str, default: Any = None) -> Any:
+    """Read an application setting by key."""
+    if not key:
+        return default
+    try:
+        init_db()
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM app_settings WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return default
+        raw = row["value"]
+        try:
+            return json.loads(raw)
+        except Exception:
+            return raw
+    except Exception as e:
+        print(f"[DB] Error getting app setting '{key}': {e}")
+        return default
+
+
+def get_all_settings(prefix: Optional[str] = None) -> Dict[str, Any]:
+    """Return all settings as a dict. Optionally filter by prefix."""
+    try:
+        init_db()
+        conn = get_connection()
+        cursor = conn.cursor()
+        if prefix:
+            cursor.execute("SELECT key, value FROM app_settings WHERE key LIKE ?", (f"{prefix}%",))
+        else:
+            cursor.execute("SELECT key, value FROM app_settings")
+        rows = cursor.fetchall()
+        conn.close()
+        out: Dict[str, Any] = {}
+        for row in rows:
+            k = row["key"]
+            v = row["value"]
+            try:
+                out[k] = json.loads(v)
+            except Exception:
+                out[k] = v
+        return out
+    except Exception as e:
+        print(f"[DB] Error listing app settings: {e}")
+        return {}
 
 
 def save_claim(state: Dict[str, Any], decision: str, notes: str = "") -> bool:

@@ -31,6 +31,23 @@ python index_db.py
 streamlit run ui/streamlit_app.py
 ```
 
+## Demo And Onboarding
+
+On first run, the app opens a Setup Wizard:
+
+- Demo mode: runs on `data/inbox` with deterministic heuristics (no external LLM required).
+- Gmail mode: connects to a real Gmail mailbox via OAuth and processes live messages.
+
+You can switch modes later in the sidebar.
+
+## Gmail Connection
+
+1. Create a Google Cloud OAuth client (installed app) and download the client secrets JSON.
+2. In the app sidebar, set Inbox Source to Gmail and upload the client secrets JSON.
+3. Click Connect Gmail and complete the OAuth flow in your browser.
+
+Tokens and secrets are saved locally under `outbox/` and are ignored by git.
+
 ## Workflow
 
 1. `ingest`: load email from `data/inbox`.
@@ -54,6 +71,11 @@ data/           Inbox samples, policies, catalog, test set
 tests/          Unit and integration tests
 reports/        Reporting templates (generated outputs are not committed)
 ```
+
+## Policy Uploads
+
+- Use the sidebar button Manage Policies to upload your own policy documents.
+- Uploaded policies are stored locally under `outbox/policies` and indexed into ChromaDB.
 
 ## Development Commands
 

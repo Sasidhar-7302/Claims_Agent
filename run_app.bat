@@ -35,7 +35,7 @@ IF %ERRORLEVEL% NEQ 0 (
 )
 
 :: 4. Check Vector Database
-IF NOT EXIST "data\chroma_db" (
+IF NOT EXIST "outbox\chroma_db" (
     echo [SETUP] Initializing Vector Database...
     python index_db.py
 ) ELSE (

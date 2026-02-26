@@ -5,6 +5,7 @@ Analyzes claim validity using deterministic checks and LLM reasoning.
 """
 
 import json
+import os
 import re
 from datetime import datetime, timedelta
 from typing import Optional, Tuple, List
@@ -259,6 +260,98 @@ def _check_requirements_missing(state: ClaimState, extracted: dict) -> List[str]
     return missing
 
 
+def _is_defect_issue(issue_description: str) -> bool:
+    text = (issue_description or "").lower()
+    defect_signals = [
+        "stopped working",
+        "not working",
+        "won't turn on",
+        "doesn't turn on",
+        "no power",
+        "no heat",
+        "no fan",
+        "no lights",
+        "burning smell",
+        "smoke",
+        "motor failure",
+        "switch broke",
+        "heating element",
+    ]
+    return any(s in text for s in defect_signals)
+
+
+def _deterministic_analysis(
+    state: ClaimState,
+    extracted: dict,
+    warranty_valid: Optional[bool],
+    warranty_details: str,
+    exclusions_triggered: Optional[List[str]] = None,
+) -> AnalysisResult:
+    product_name = state.get("product_name") or extracted.get("product_name") or "Unknown"
+    purchase_date = extracted.get("purchase_date") or "Not provided"
+    issue = extracted.get("issue_description") or "Not provided"
+
+    facts = [
+        f"Product: {product_name}",
+        f"Purchase date: {purchase_date}",
+        f"Issue: {issue}",
+        f"Serial: {extracted.get('product_serial') or 'Not provided'}",
+        f"Proof of purchase: {'Yes' if extracted.get('has_proof_of_purchase') else 'No'}",
+    ]
+
+    exclusions = exclusions_triggered or []
+    if exclusions:
+        return AnalysisResult(
+            recommendation="REJECT",
+            confidence=0.85,
+            facts=facts + [f"Exclusions matched: {', '.join(exclusions)}"],
+            assumptions=[],
+            reasoning="Excluded conditions were detected. Claim is not eligible under the policy.",
+            policy_references=["EXCLUSIONS"],
+            warranty_window_valid=warranty_valid,
+            warranty_window_details=warranty_details,
+            exclusions_triggered=exclusions,
+        )
+
+    if warranty_valid is not True:
+        return AnalysisResult(
+            recommendation="NEED_INFO",
+            confidence=0.75,
+            facts=facts,
+            assumptions=[],
+            reasoning="Warranty eligibility could not be verified. Request missing purchase/warranty information and proceed with review.",
+            policy_references=["WARRANTY PERIOD", "CLAIM REQUIREMENTS"],
+            warranty_window_valid=warranty_valid,
+            warranty_window_details=warranty_details,
+            exclusions_triggered=[],
+        )
+
+    if _is_defect_issue(issue):
+        return AnalysisResult(
+            recommendation="APPROVE",
+            confidence=0.8,
+            facts=facts,
+            assumptions=["Customer reports normal use; no exclusions detected."],
+            reasoning="Claim appears to be within the warranty window and describes a covered defect under normal use.",
+            policy_references=["WARRANTY PERIOD", "COVERAGE"],
+            warranty_window_valid=warranty_valid,
+            warranty_window_details=warranty_details,
+            exclusions_triggered=[],
+        )
+
+    return AnalysisResult(
+        recommendation="NEED_INFO",
+        confidence=0.65,
+        facts=facts,
+        assumptions=[],
+        reasoning="Issue details are insufficient to confirm a covered defect. Request more specifics and/or supporting evidence.",
+        policy_references=["CLAIM REQUIREMENTS"],
+        warranty_window_valid=warranty_valid,
+        warranty_window_details=warranty_details,
+        exclusions_triggered=[],
+    )
+
+
 def analyze_claim(state: ClaimState) -> ClaimState:
     """
     Analyze warranty claim using deterministic checks and LLM reasoning.
@@ -333,6 +426,7 @@ def analyze_claim(state: ClaimState) -> ClaimState:
     
     # Critical fields that MUST be present for any decision
     critical_missing = [f for f in missing_fields if f in [
+        "purchase_date",
         "product_name", 
         "issue_description", 
         "contact_info (email, phone, or address)"
@@ -405,6 +499,15 @@ def analyze_claim(state: ClaimState) -> ClaimState:
             "workflow_status": "ANALYZED"
         }
 
+    demo_mode = os.getenv("DEMO_MODE", "false").strip().lower() == "true"
+    if demo_mode:
+        return {
+            **state,
+            "analysis": _deterministic_analysis(state, extracted, warranty_valid, warranty_details),
+            "llm_model": "demo",
+            "workflow_status": "ANALYZED",
+        }
+
     # Use LLM for detailed analysis
     try:
         llm = get_llm()
@@ -458,19 +561,13 @@ def analyze_claim(state: ClaimState) -> ClaimState:
         }
         
     except Exception as e:
-        # Fallback analysis
+        # Fallback analysis: keep system usable without LLM access.
+        fallback = _deterministic_analysis(state, extracted, warranty_valid, warranty_details)
         return {
             **state,
             "analysis": AnalysisResult(
-                recommendation="NEED_INFO",
-                confidence=0.5,
-                facts=[f"Analysis error: {e}"],
-                assumptions=["Manual review required due to analysis error"],
-                reasoning="Automated analysis failed. Please review manually.",
-                policy_references=[],
-                warranty_window_valid=warranty_valid,
-                warranty_window_details=warranty_details,
-                exclusions_triggered=[]
+                **fallback,
+                facts=(fallback.get("facts", []) + [f"LLM analysis error: {e}"]),
             ),
             "workflow_status": "ANALYZED"
         }

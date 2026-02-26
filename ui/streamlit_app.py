@@ -26,7 +26,8 @@ from app.graph import compile_workflow
 from app.database import (
     save_claim, get_recent_claims, get_claim_by_email_id, 
     get_all_processed_email_ids, get_claim_decisions, 
-    clear_all_claims, get_stats
+    clear_all_claims, get_stats,
+    get_setting, set_setting
 )
 from app.nodes.draft_response import draft_non_claim_response
 from langgraph.checkpoint.memory import MemorySaver
@@ -223,6 +224,265 @@ def is_out_of_credits(error: Exception) -> bool:
     return any(signal in message for signal in signals)
 
 
+def render_onboarding():
+    """First-run setup wizard (demo mode or live integrations)."""
+    st.markdown("## Setup Wizard")
+    st.caption("Configure demo mode or connect a real mailbox and policies. Settings are stored locally in SQLite.")
+
+    mode = st.radio(
+        "Choose a starting mode",
+        ["Demo (recommended)", "Connect Gmail"],
+        help="Demo mode runs without any API keys. Gmail mode requires Google OAuth credentials.",
+    )
+
+    st.markdown("---")
+    st.markdown("### Policy Source")
+    policy_source = st.radio(
+        "Policies",
+        ["Use built-in demo policies", "Upload my own policies (recommended for real use)"],
+    )
+
+    if policy_source.startswith("Use built-in"):
+        set_setting("policy.source", "demo")
+    else:
+        set_setting("policy.source", "uploaded")
+
+    st.markdown("---")
+    st.markdown("### LLM Mode")
+    st.caption("You can change providers later in the sidebar.")
+    if st.button("Enable Demo LLM (no external calls)", type="primary", use_container_width=True):
+        os.environ["DEMO_MODE"] = "true"
+        st.session_state.llm_provider = "Demo (No LLM)"
+        st.session_state.llm_active_config = {"provider": "demo", "api_key": "", "model": ""}
+        st.session_state.llm_available = True
+        st.session_state.llm_error = ""
+        set_setting("llm.provider", "demo")
+        st.success("Demo mode enabled.")
+
+    st.markdown("---")
+    if mode.startswith("Demo"):
+        st.info("Demo mode uses local sample inbox and deterministic heuristics so it always works.")
+        if st.button("Finish Setup (Demo)", use_container_width=True, type="primary"):
+            set_setting("app.mode", "demo")
+            set_setting("email.source", "local")
+            set_setting("app.onboarding_complete", True)
+            if os.getenv("DEMO_MODE", "false").strip().lower() != "true":
+                os.environ["DEMO_MODE"] = "true"
+                st.session_state.llm_active_config = {"provider": "demo", "api_key": "", "model": ""}
+                st.session_state.llm_available = True
+            st.session_state.workflow_stage = "select"
+            st.rerun()
+        return
+
+    st.markdown("### Gmail Connection")
+    set_setting("app.mode", "gmail")
+    set_setting("email.source", "gmail")
+
+    client_path, token_path = get_gmail_paths()
+    uploaded_secret = st.file_uploader("Upload Gmail client secrets JSON", type=["json"], key="onboard_gmail_client_secret")
+    if uploaded_secret is not None:
+        try:
+            client_path.parent.mkdir(parents=True, exist_ok=True)
+            client_path.write_bytes(uploaded_secret.getvalue())
+            set_setting("gmail.client_secrets_path", str(client_path))
+            st.success("Saved client secrets locally.")
+        except Exception as e:
+            st.error(f"Could not save client secrets: {e}")
+
+    query_value = st.text_input(
+        "Gmail query",
+        value=(get_setting("gmail.query", "is:unread") or "is:unread"),
+        help="Example: label:claims is:unread",
+        key="onboard_gmail_query",
+    )
+    if st.button("Save Query", use_container_width=True):
+        set_setting("gmail.query", query_value)
+        st.success("Query saved.")
+
+    if st.button("Connect Gmail", type="primary", use_container_width=True):
+        try:
+            from app.integrations.gmail import get_gmail_service
+
+            if not client_path.exists():
+                st.error("Upload a Gmail client secrets JSON first.")
+            else:
+                service = get_gmail_service(client_path, token_path)
+                st.session_state.gmail_service = service
+                set_setting("gmail.token_path", str(token_path))
+                st.success("Gmail connected.")
+        except Exception as e:
+            st.error(f"Gmail connection failed: {e}")
+
+    if st.session_state.get("gmail_service") is not None:
+        st.success("Gmail status: connected")
+        if st.button("Finish Setup (Gmail)", use_container_width=True, type="primary"):
+            set_setting("app.onboarding_complete", True)
+            st.session_state.workflow_stage = "select"
+            st.session_state.emails = load_emails()
+            st.rerun()
+
+    st.markdown("---")
+    if st.button("Back to Demo Setup", use_container_width=True):
+        set_setting("email.source", "local")
+        st.session_state.workflow_stage = "onboarding"
+        st.rerun()
+
+
+def apply_policy_source(source: str) -> None:
+    """Apply policy source selection to environment and cached vector store."""
+    from app.vector_store import reset_vector_store
+
+    source = (source or "").strip().lower()
+    if source == "uploaded":
+        policies_dir = OUTBOX_DIR / "policies"
+        index_file = policies_dir / "index.json"
+        os.environ["POLICIES_DIR"] = str(policies_dir)
+        os.environ["POLICY_INDEX_FILE"] = str(index_file)
+        os.environ["CHROMA_DIR"] = str(OUTBOX_DIR / "chroma_db")
+        set_setting("policy.source", "uploaded")
+    else:
+        os.environ.pop("POLICIES_DIR", None)
+        os.environ.pop("POLICY_INDEX_FILE", None)
+        os.environ.pop("CHROMA_DIR", None)
+        set_setting("policy.source", "demo")
+
+    reset_vector_store()
+
+
+def render_policy_management():
+    """Upload/manage policy documents and rebuild the vector index."""
+    from app.policy_manager import (
+        PolicyIndexEntry,
+        extract_text_from_bytes,
+        load_policy_index,
+        normalize_keywords,
+        normalize_requirements,
+        upsert_policy_entry,
+        write_policy_text,
+    )
+    from app.vector_store import get_chroma_dir, get_policy_index_file, get_policies_dir, get_vector_store
+
+    st.markdown("## Policy Management")
+
+    current_source = get_setting("policy.source", "demo") or "demo"
+    choice = st.radio(
+        "Policy source",
+        ["Demo (repo policies)", "Uploaded (local outbox)"],
+        index=0 if current_source == "demo" else 1,
+        help="Uploaded policies are stored locally and ignored by git.",
+    )
+    source = "demo" if choice.startswith("Demo") else "uploaded"
+    if source != current_source:
+        apply_policy_source(source)
+        st.success("Policy source updated.")
+
+    st.caption(f"Policies dir: {get_policies_dir()}")
+    st.caption(f"Policy index: {get_policy_index_file()}")
+    st.caption(f"Chroma dir: {get_chroma_dir()}")
+
+    st.markdown("---")
+    index_data = load_policy_index(get_policy_index_file())
+    policies = index_data.get("policies", []) or []
+    st.markdown(f"### Indexed Policies ({len(policies)})")
+    if policies:
+        st.json(policies)
+    else:
+        st.info("No policy metadata found yet.")
+
+    if source != "uploaded":
+        st.markdown("---")
+        st.info("Demo source uses the repository policies in `data/policies`. Switch to Uploaded to add your own.")
+        if st.button("Back", use_container_width=True):
+            st.session_state.workflow_stage = "select"
+            st.rerun()
+        return
+
+    st.markdown("---")
+    st.markdown("### Upload Policy Document")
+    uploaded = st.file_uploader("Policy file", type=["txt", "md", "pdf"])
+
+    # Load products for mapping.
+    products = []
+    try:
+        with open(DATA_DIR / "products.json", "r", encoding="utf-8") as f:
+            products = (json.load(f) or {}).get("products", []) or []
+    except Exception:
+        products = []
+
+    product_labels = [f"{p.get('product_id')} - {p.get('name')}" for p in products if p.get("product_id") and p.get("name")]
+
+    if uploaded:
+        try:
+            policy_text = extract_text_from_bytes(uploaded.name, uploaded.getvalue())
+            st.caption("Preview (first 800 chars)")
+            st.code(policy_text[:800])
+        except Exception as e:
+            st.error(f"Could not extract text: {e}")
+            policy_text = ""
+
+        with st.form("policy_meta_form"):
+            product_choice = st.selectbox("Product", product_labels) if product_labels else st.text_input("Product ID")
+            version = st.text_input("Version", value="v1")
+            effective_date = st.date_input("Effective date")
+            exclusions_raw = st.text_area("Exclusion keywords (one per line)", placeholder="water\ndrop\ncommercial use")
+            requirements = st.multiselect(
+                "Requirements",
+                [
+                    "proof_of_purchase",
+                    "serial_number",
+                    "contact_info",
+                    "photos",
+                    "business_license",
+                    "maintenance_description",
+                    "adult_supervision",
+                    "recycling_confirmation",
+                    "us_address",
+                    "us_ca_address",
+                ],
+            )
+            submit = st.form_submit_button("Save Policy", type="primary")
+
+        if submit:
+            if not policy_text.strip():
+                st.error("Policy text is empty.")
+            else:
+                if isinstance(product_choice, str) and " - " in product_choice:
+                    product_id, product_name = product_choice.split(" - ", 1)
+                else:
+                    product_id = str(product_choice).strip()
+                    product_name = product_id
+
+                policy_file = write_policy_text(get_policies_dir(), uploaded.name, policy_text)
+                policy_id = f"{product_id}-{version}".strip("-")
+
+                entry = PolicyIndexEntry(
+                    policy_id=policy_id,
+                    product_id=product_id,
+                    product_name=product_name,
+                    policy_file=policy_file,
+                    version=version,
+                    effective_date=effective_date.isoformat(),
+                    exclusion_keywords=normalize_keywords(exclusions_raw),
+                    requirements=normalize_requirements(requirements),
+                )
+                upsert_policy_entry(get_policy_index_file(), entry)
+                st.success(f"Saved policy `{policy_id}` as `{policy_file}`.")
+
+    st.markdown("---")
+    if st.button("Rebuild Vector Index", type="primary", use_container_width=True):
+        from app.vector_store import reset_vector_store
+
+        reset_vector_store()
+        store = get_vector_store()
+        count = store.index_policies(force_reindex=True)
+        st.success(f"Indexed {count} policy chunks.")
+
+    st.markdown("---")
+    if st.button("Back", use_container_width=True):
+        st.session_state.workflow_stage = "select"
+        st.rerun()
+
+
 # Initialize session state with database persistence
 if "initialized" not in st.session_state:
     # Load from database instead of JSON file
@@ -244,6 +504,15 @@ if "initialized" not in st.session_state:
     st.session_state.pending_dispatch = []
     st.session_state.workflow_stage = "select"
     st.session_state.initialized = True
+
+if "onboarding_checked" not in st.session_state:
+    if not get_setting("app.onboarding_complete", False):
+        st.session_state.workflow_stage = "onboarding"
+    st.session_state.onboarding_checked = True
+
+if "policy_env_applied" not in st.session_state:
+    apply_policy_source(get_setting("policy.source", "demo") or "demo")
+    st.session_state.policy_env_applied = True
 
 if "pending_dispatch" not in st.session_state:
     st.session_state.pending_dispatch = []
@@ -307,13 +576,86 @@ def load_inbox_emails():
     return emails
 
 
-def run_workflow_to_review(email_id: str):
+def get_email_source() -> str:
+    return (get_setting("email.source", "local") or "local").strip().lower()
+
+
+def get_gmail_paths() -> tuple[Path, Path]:
+    secrets_dir = OUTBOX_DIR / "secrets"
+    client_path = Path(get_setting("gmail.client_secrets_path", str(secrets_dir / "gmail_client_secret.json")))
+    token_path = Path(get_setting("gmail.token_path", str(secrets_dir / "gmail_token.json")))
+    return client_path, token_path
+
+
+def get_gmail_service_cached() -> object | None:
+    return st.session_state.get("gmail_service")
+
+
+def load_gmail_emails(max_results: int = 25) -> list[dict]:
+    """List Gmail messages as inbox items (metadata only)."""
+    service = get_gmail_service_cached()
+    if service is None:
+        return []
+
+    from app.integrations.gmail import list_message_ids, fetch_message
+
+    query = (get_setting("gmail.query", "is:unread") or "is:unread").strip()
+    processed_ids = set(get_all_processed_email_ids())
+    claim_decisions = get_claim_decisions()
+
+    emails: list[dict] = []
+    for msg_id in list_message_ids(service, query=query, max_results=max_results):
+        # Lightweight fetch for subject/from/date/snippet
+        msg = fetch_message(service, msg_id)
+        is_processed = msg.message_id in processed_ids
+        decision = claim_decisions.get(msg.message_id)
+        emails.append({
+            "file": "gmail",
+            "email_id": msg.message_id,
+            "subject": msg.subject or "No subject",
+            "from": msg.email_from or "Unknown",
+            "date": msg.date or "Unknown",
+            "body": (msg.body or "")[:200],
+            "expected": "Unknown",
+            "is_processed": is_processed,
+            "decision": decision,
+        })
+
+    emails.sort(key=lambda x: (x["is_processed"], x["email_id"]))
+    return emails
+
+
+def load_emails() -> list[dict]:
+    src = get_email_source()
+    if src == "gmail":
+        return load_gmail_emails()
+    return load_inbox_emails()
+
+
+def fetch_gmail_message_fields(message_id: str) -> dict:
+    service = get_gmail_service_cached()
+    if service is None:
+        raise RuntimeError("Gmail is not connected.")
+    from app.integrations.gmail import fetch_message
+
+    msg = fetch_message(service, message_id)
+    return {
+        "email_id": msg.message_id,
+        "email_from": msg.email_from,
+        "email_to": msg.email_to,
+        "email_subject": msg.subject,
+        "email_date": msg.date,
+        "email_body": msg.body,
+        "email_attachments": msg.attachments,
+    }
+
+
+def run_workflow_to_review(email_id: str, email_data: dict | None = None):
     """Run workflow until human review interrupt."""
     if not st.session_state.get("llm_available", False):
         st.error("LLM unavailable. Configure a provider in the sidebar.")
         return False
     try:
-        initial_state = create_initial_state(email_id)
         print(f"[DEBUG] Starting workflow for email: {email_id}")
         
         workflow = compile_workflow(st.session_state.checkpointer)
@@ -323,6 +665,8 @@ def run_workflow_to_review(email_id: str):
         
         # Check if we already have a state for this email to keep ID consistent
         initial_input = create_initial_state(email_id)
+        if email_data:
+            initial_input.update(email_data)
         try:
             snapshot = workflow.get_state(config)
             if snapshot and snapshot.values:
@@ -495,14 +839,16 @@ def render_sidebar():
         """, unsafe_allow_html=True)
         st.markdown("---")
         st.markdown("### LLM Provider")
-        provider_options = ["Ollama (Local)", "Groq", "Gemini", "OpenAI"]
+        provider_options = ["Demo (No LLM)", "Ollama (Local)", "Groq", "Gemini", "OpenAI"]
         provider_map = {
+            "Demo (No LLM)": "demo",
             "Ollama (Local)": "ollama",
             "Groq": "groq",
             "Gemini": "gemini",
             "OpenAI": "openai"
         }
         model_placeholders = {
+            "demo": "demo",
             "ollama": "qwen2.5:1.5b",
             "groq": "llama-3.3-70b-versatile",
             "gemini": "gemini-2.0-flash",
@@ -529,7 +875,10 @@ def render_sidebar():
                 st.checkbox("Remember key on this machine", key="llm_save_key")
                 st.caption("Saved keys are stored in .env (local only).")
             else:
-                st.caption("Local Ollama uses your machine; no API key required.")
+                if provider_key == "demo":
+                    st.caption("Demo mode uses deterministic heuristics; no API key required.")
+                else:
+                    st.caption("Local Ollama uses your machine; no API key required.")
                 st.checkbox("Remember key on this machine", key="llm_save_key", disabled=True)
             st.text_input(
                 "Model override (optional)",
@@ -546,15 +895,21 @@ def render_sidebar():
             else:
                 previous_config = st.session_state.llm_active_config.copy()
                 try:
-                    from app.llm import get_llm
-                    llm = get_llm(
-                        provider=provider_key,
-                        api_key=api_key or None,
-                        model=model or None,
-                        force_new=True
-                    )
-                    if provider_key != "ollama":
-                        llm.generate("Reply with OK.", max_tokens=5)
+                    if provider_key == "demo":
+                        os.environ["DEMO_MODE"] = "true"
+                    else:
+                        os.environ["DEMO_MODE"] = "false"
+
+                    if provider_key != "demo":
+                        from app.llm import get_llm
+                        llm = get_llm(
+                            provider=provider_key,
+                            api_key=api_key or None,
+                            model=model or None,
+                            force_new=True
+                        )
+                        if provider_key != "ollama":
+                            llm.generate("Reply with OK.", max_tokens=5)
                     st.session_state.llm_active_config = {
                         "provider": provider_key,
                         "api_key": api_key,
@@ -579,6 +934,66 @@ def render_sidebar():
                         st.error(f"Could not connect to {provider_choice}: {e}")
 
         st.markdown("---")
+        st.markdown("### Inbox Source")
+        current_source = get_email_source()
+        source_choice = st.selectbox(
+            "Source",
+            ["Local (Demo)", "Gmail"],
+            index=0 if current_source != "gmail" else 1,
+            key="inbox_source_select",
+        )
+        new_source = "gmail" if source_choice == "Gmail" else "local"
+        if new_source != current_source:
+            set_setting("email.source", new_source)
+            st.session_state.emails = load_emails()
+            st.rerun()
+
+        if new_source == "gmail":
+            client_path, token_path = get_gmail_paths()
+            st.caption("Gmail OAuth requires an installed-app client JSON from Google Cloud Console.")
+            uploaded_secret = st.file_uploader("Client secrets JSON", type=["json"], key="gmail_client_secret_upload")
+            if uploaded_secret is not None:
+                try:
+                    client_path.parent.mkdir(parents=True, exist_ok=True)
+                    client_path.write_bytes(uploaded_secret.getvalue())
+                    set_setting("gmail.client_secrets_path", str(client_path))
+                    st.success("Saved Gmail client secrets locally (ignored by git).")
+                except Exception as e:
+                    st.error(f"Could not save client secrets: {e}")
+
+            query_value = st.text_input(
+                "Gmail query",
+                value=(get_setting("gmail.query", "is:unread") or "is:unread"),
+                help="Example: label:claims is:unread",
+                key="gmail_query_input",
+            )
+            if st.button("Apply Gmail Query", use_container_width=True):
+                set_setting("gmail.query", query_value)
+                st.session_state.emails = load_emails()
+                st.rerun()
+
+            if st.session_state.get("gmail_service") is not None:
+                st.caption("Status: connected")
+            if st.button("Connect Gmail", type="primary", use_container_width=True):
+                try:
+                    from app.integrations.gmail import get_gmail_service
+
+                    if not client_path.exists():
+                        st.error("Upload a Gmail client secrets JSON first.")
+                    else:
+                        service = get_gmail_service(client_path, token_path)
+                        st.session_state.gmail_service = service
+                        set_setting("gmail.token_path", str(token_path))
+                        st.success("Gmail connected.")
+                        st.session_state.emails = load_emails()
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Gmail connection failed: {e}")
+
+            if st.button("Refresh Inbox", use_container_width=True):
+                st.session_state.emails = load_emails()
+                st.rerun()
+
         st.write("**Recent Activity**")
         
         # Mini feed of recent actions (click to open)
@@ -603,6 +1018,11 @@ def render_sidebar():
                 st.rerun()
 
         st.markdown("---")
+        if st.button("Manage Policies", use_container_width=True):
+            st.session_state.workflow_stage = "policies"
+            st.rerun()
+
+        st.markdown("---")
         if st.button("Reset Session", use_container_width=True):
             # Clear database
             clear_all_claims()
@@ -617,7 +1037,7 @@ def render_sidebar():
             st.session_state.workflow = None
             st.session_state.checkpointer = MemorySaver()
             st.session_state.workflow_stage = "select"
-            st.session_state.emails = load_inbox_emails()
+            st.session_state.emails = load_emails()
             st.rerun()
 
 
@@ -799,7 +1219,17 @@ def render_email_selection():
                              st.session_state.current_email = email['email_id']
                              # The original `run_workflow_to_review` handles setting current_state and workflow_stage
                              with st.spinner("Analyzing claim..."):
-                                 success = run_workflow_to_review(email['email_id'])
+                                 email_data = None
+                                 if get_email_source() == "gmail":
+                                     try:
+                                         email_data = fetch_gmail_message_fields(email["email_id"])
+                                     except Exception as e:
+                                         st.error(f"Could not fetch Gmail message: {e}")
+                                         success = False
+                                     else:
+                                         success = run_workflow_to_review(email['email_id'], email_data=email_data)
+                                 else:
+                                     success = run_workflow_to_review(email['email_id'])
                              if success:
                                  st.rerun()
                              else:
@@ -1618,7 +2048,7 @@ def main():
     """Main Streamlit app."""
     # Load emails first so they are available for sidebar statistics if needed
     if "emails" not in st.session_state:
-        st.session_state.emails = load_inbox_emails()
+        st.session_state.emails = load_emails()
         
     render_sidebar()
     
@@ -1626,26 +2056,34 @@ def main():
     try:
         from app.llm import get_llm
         llm_config = st.session_state.get("llm_active_config", {"provider": "ollama", "api_key": "", "model": ""})
-        force_new = st.session_state.llm_force_refresh
-        st.session_state.llm_force_refresh = False
-        llm = get_llm(
-            provider=llm_config.get("provider") or "ollama",
-            api_key=llm_config.get("api_key") or None,
-            model=llm_config.get("model") or None,
-            force_new=force_new
-        )
-        st.session_state.llm_available = True
-        st.session_state.llm_error = ""
-        provider_labels = {
-            "ollama": "Ollama",
-            "groq": "Groq",
-            "gemini": "Gemini",
-            "openai": "OpenAI",
-            "auto": "Auto"
-        }
-        provider_label = provider_labels.get(llm_config.get("provider"), "LLM")
-        with st.sidebar:
-            st.caption(f"Using: {provider_label}/{llm.model_name}")
+        provider_key = (llm_config.get("provider") or "ollama").strip().lower()
+        if provider_key == "demo" or os.getenv("DEMO_MODE", "false").strip().lower() == "true":
+            st.session_state.llm_available = True
+            st.session_state.llm_error = ""
+            with st.sidebar:
+                st.caption("Using: Demo (deterministic)")
+        else:
+            force_new = st.session_state.llm_force_refresh
+            st.session_state.llm_force_refresh = False
+            llm = get_llm(
+                provider=llm_config.get("provider") or "ollama",
+                api_key=llm_config.get("api_key") or None,
+                model=llm_config.get("model") or None,
+                force_new=force_new
+            )
+            st.session_state.llm_available = True
+            st.session_state.llm_error = ""
+            provider_labels = {
+                "demo": "Demo",
+                "ollama": "Ollama",
+                "groq": "Groq",
+                "gemini": "Gemini",
+                "openai": "OpenAI",
+                "auto": "Auto"
+            }
+            provider_label = provider_labels.get(llm_config.get("provider"), "LLM")
+            with st.sidebar:
+                st.caption(f"Using: {provider_label}/{llm.model_name}")
     except Exception as e:
         st.session_state.llm_available = False
         st.session_state.llm_error = str(e)
@@ -1658,8 +2096,12 @@ def main():
     # Route to appropriate view
     stage = st.session_state.workflow_stage
     
-    if stage == "select":
+    if stage == "onboarding":
+        render_onboarding()
+    elif stage == "select":
         render_email_selection()
+    elif stage == "policies":
+        render_policy_management()
     elif stage == "processing":
         st.info("Processing claim...")
     elif stage == "review":

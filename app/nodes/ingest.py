@@ -24,6 +24,15 @@ def ingest_email(state: ClaimState) -> ClaimState:
     Returns:
         Updated state with raw email data
     """
+    # If email content is already present (e.g. from a live connector), skip file ingestion.
+    if state.get("email_body") and state.get("email_from") and state.get("email_subject"):
+        attachments = state.get("email_attachments") or []
+        return {
+            **state,
+            "email_attachments": attachments,
+            "workflow_status": "PENDING",
+        }
+
     email_id = state.get("email_id", "")
     
     # Try to find the email file

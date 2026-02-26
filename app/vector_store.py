@@ -9,20 +9,42 @@ from typing import List, Dict, Optional
 
 # Define paths
 BASE_DIR = Path(__file__).parent.parent
-POLICIES_DIR = BASE_DIR / "data" / "policies"
-POLICY_INDEX_FILE = POLICIES_DIR / "index.json"
-DB_DIR = BASE_DIR / "data" / "chroma_db"
+DEFAULT_POLICIES_DIR = BASE_DIR / "data" / "policies"
+DEFAULT_CHROMA_DIR = BASE_DIR / "outbox" / "chroma_db"
 
-# Ensure DB directory exists
-DB_DIR.mkdir(parents=True, exist_ok=True)
+
+def get_policies_dir() -> Path:
+    """Return the directory containing policy documents."""
+    value = (os.getenv("POLICIES_DIR") or "").strip()
+    return Path(value) if value else DEFAULT_POLICIES_DIR
+
+
+def get_policy_index_file() -> Path:
+    """Return the path to the policy metadata index JSON."""
+    value = (os.getenv("POLICY_INDEX_FILE") or "").strip()
+    if value:
+        return Path(value)
+    return get_policies_dir() / "index.json"
+
+
+def get_chroma_dir() -> Path:
+    """Return the persistent directory for ChromaDB storage."""
+    value = (os.getenv("CHROMA_DIR") or "").strip()
+    return Path(value) if value else DEFAULT_CHROMA_DIR
+
+
+def ensure_runtime_dirs() -> None:
+    get_chroma_dir().mkdir(parents=True, exist_ok=True)
+    get_policies_dir().mkdir(parents=True, exist_ok=True)
 
 def load_policy_index() -> List[Dict]:
     """Load policy index metadata."""
-    if not POLICY_INDEX_FILE.exists():
+    policy_index_file = get_policy_index_file()
+    if not policy_index_file.exists():
         return []
     try:
         import json
-        with open(POLICY_INDEX_FILE, "r", encoding="utf-8") as f:
+        with open(policy_index_file, "r", encoding="utf-8") as f:
             data = json.load(f)
         return data.get("policies", [])
     except Exception as e:
@@ -92,7 +114,8 @@ def get_embedding_function():
 class WarrantyVectorStore:
     def __init__(self):
         """Initialize ChromaDB client and collection."""
-        self.client = chromadb.PersistentClient(path=str(DB_DIR))
+        ensure_runtime_dirs()
+        self.client = chromadb.PersistentClient(path=str(get_chroma_dir()))
         
         self.embedding_fn = get_embedding_function()
         
@@ -135,7 +158,8 @@ class WarrantyVectorStore:
 
         policy_index = load_policy_index()
         policy_map = {p.get("policy_file"): p for p in policy_index}
-        files = list(POLICIES_DIR.glob("*.txt"))
+        policies_dir = get_policies_dir()
+        files = list(policies_dir.glob("*.txt"))
         count = 0
         
         for file_path in files:
@@ -240,3 +264,9 @@ def get_vector_store():
     if _store_instance is None:
         _store_instance = WarrantyVectorStore()
     return _store_instance
+
+
+def reset_vector_store():
+    """Reset the cached vector store instance (e.g. after changing env config)."""
+    global _store_instance
+    _store_instance = None

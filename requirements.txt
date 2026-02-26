@@ -7,6 +7,11 @@ groq>=0.5.0
 openai>=1.0.0
 requests>=2.31.0
 
+# Gmail connector (OAuth + API)
+google-auth-oauthlib>=1.2.0
+google-auth-httplib2>=0.2.0
+google-api-python-client>=2.0.0
+
 # UI
 streamlit>=1.40.0
 
@@ -22,6 +27,9 @@ numpy<2.0
 
 # Optional: Vector store for policy retrieval
 chromadb>=0.5.0
+
+# Optional: PDF text extraction for policy uploads
+pypdf>=4.0.0
 
 # Testing
 pytest>=7.0.0

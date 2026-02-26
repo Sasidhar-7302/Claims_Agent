@@ -10,6 +10,8 @@ This project is a human-in-the-loop warranty claims processing system.
 - `app/llm.py`: provider abstraction for Ollama, Groq, Gemini, and OpenAI.
 - `app/vector_store.py`: policy indexing and retrieval using ChromaDB.
 - `app/database.py`: SQLite persistence for processed claims.
+- `app/policy_manager.py`: policy document upload ingestion and index.json management.
+- `app/integrations/gmail.py`: Gmail OAuth + message fetch (inbound).
 
 ## Workflow Lifecycle
 
@@ -30,6 +32,11 @@ This project is a human-in-the-loop warranty claims processing system.
 - Input fixtures: `data/inbox`, `data/policies`, `data/products.json`.
 - Runtime artifacts: `outbox/` (intentionally ignored by git).
 - Evaluation fixtures: `data/testset.jsonl`.
+
+## Demo vs Live
+
+- Demo mode: deterministic triage/extraction/analysis, no external LLM required.
+- Live mode: connect a real mailbox (Gmail) and process real emails; upload policies for your products.
 
 ## Reliability Notes
 
