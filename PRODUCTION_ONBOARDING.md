@@ -62,6 +62,7 @@ Use **Setup Wizard** -> **Enterprise Setup**.
 - Inbox source:
   - `Local folder` for internal testing
   - `Gmail API` for real inbound email
+  - `IMAP` for Outlook/Exchange Online and other enterprise mail providers
 - Outbound mode:
   - `Manual` (draft only)
   - `Gmail API`
@@ -73,6 +74,17 @@ Use **Setup Wizard** -> **Enterprise Setup**.
 2. Upload client secrets JSON in onboarding or sidebar.
 3. Click **Connect Gmail** and complete OAuth.
 4. Set Gmail query (example: `label:claims is:unread`).
+
+#### IMAP setup
+
+1. Set Inbox source to `IMAP`.
+2. Configure host, port, username, password/app-password, folder, and query.
+3. Save settings and click **Test IMAP Connection**.
+
+Common hosts:
+- Outlook/Exchange Online: `outlook.office365.com`
+- Gmail IMAP: `imap.gmail.com`
+- Zoho: `imap.zoho.com`
 
 #### SMTP setup
 
@@ -106,4 +118,3 @@ Use **Enterprise Readiness Checklist** and click **Finish Enterprise Setup** onl
 - Claims DB path is configurable.
 - Outbound sends are idempotent (duplicate-send protection).
 - Gmail attachments are downloaded and parsed; OCR for images is optional (requires system Tesseract).
-

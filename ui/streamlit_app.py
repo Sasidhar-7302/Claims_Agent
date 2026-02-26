@@ -387,13 +387,26 @@ def render_onboarding():
 
         st.markdown("---")
         st.markdown("### 4. Mailbox + Outbound")
+        source_map = {
+            "Local folder": "local",
+            "Gmail API": "gmail",
+            "IMAP (Outlook/Enterprise)": "imap",
+        }
+        source_labels = list(source_map.keys())
+        current_source = get_email_source()
+        source_idx = 0
+        for idx, label in enumerate(source_labels):
+            if source_map[label] == current_source:
+                source_idx = idx
+                break
+
         inbox_mode = st.selectbox(
             "Inbox source",
-            ["Local folder", "Gmail API"],
-            index=0 if get_email_source() != "gmail" else 1,
+            source_labels,
+            index=source_idx,
             key="onboard_enterprise_inbox_source",
         )
-        selected_inbox_source = "local" if inbox_mode == "Local folder" else "gmail"
+        selected_inbox_source = source_map[inbox_mode]
         set_setting("email.source", selected_inbox_source)
 
         outbound_choice = st.selectbox(
@@ -452,6 +465,112 @@ def render_onboarding():
                 except Exception as e:
                     st.error(f"Gmail connection failed: {e}")
 
+        if selected_inbox_source == "imap":
+            st.caption("IMAP supports Outlook/Exchange Online (app password), Zoho, and other enterprise providers.")
+            imap_cfg = get_imap_config()
+
+            imap_host = st.text_input(
+                "IMAP host",
+                value=imap_cfg["host"],
+                key="onboard_enterprise_imap_host",
+            )
+            c_imap_1, c_imap_2 = st.columns(2)
+            with c_imap_1:
+                imap_port = st.number_input(
+                    "IMAP port",
+                    min_value=1,
+                    max_value=65535,
+                    value=int(imap_cfg["port"]),
+                    step=1,
+                    key="onboard_enterprise_imap_port",
+                )
+            with c_imap_2:
+                imap_use_ssl = st.checkbox(
+                    "Use SSL",
+                    value=bool(imap_cfg["use_ssl"]),
+                    key="onboard_enterprise_imap_use_ssl",
+                )
+
+            imap_username = st.text_input(
+                "IMAP username/email",
+                value=imap_cfg["username"],
+                key="onboard_enterprise_imap_username",
+            )
+            imap_password = st.text_input(
+                "IMAP password / app password",
+                value="",
+                type="password",
+                key="onboard_enterprise_imap_password",
+                help="Leave blank to keep current IMAP_PASSWORD from your environment/.env.",
+            )
+            c_imap_3, c_imap_4 = st.columns(2)
+            with c_imap_3:
+                imap_folder = st.text_input(
+                    "IMAP folder",
+                    value=imap_cfg["folder"],
+                    key="onboard_enterprise_imap_folder",
+                )
+            with c_imap_4:
+                imap_query = st.text_input(
+                    "IMAP search query",
+                    value=imap_cfg["query"],
+                    key="onboard_enterprise_imap_query",
+                    help='Examples: UNSEEN | UNSEEN SUBJECT "claim"',
+                )
+
+            if st.button("Save IMAP Settings", use_container_width=True, key="onboard_enterprise_save_imap"):
+                host_value = (imap_host or "").strip()
+                username_value = (imap_username or "").strip()
+                folder_value = (imap_folder or "INBOX").strip() or "INBOX"
+                query_value = (imap_query or "UNSEEN").strip() or "UNSEEN"
+                set_setting("imap.host", host_value)
+                set_setting("imap.port", int(imap_port))
+                set_setting("imap.username", username_value)
+                set_setting("imap.folder", folder_value)
+                set_setting("imap.query", query_value)
+                set_setting("imap.use_ssl", bool(imap_use_ssl))
+                os.environ["IMAP_HOST"] = host_value
+                os.environ["IMAP_PORT"] = str(int(imap_port))
+                os.environ["IMAP_USERNAME"] = username_value
+                os.environ["IMAP_FOLDER"] = folder_value
+                os.environ["IMAP_QUERY"] = query_value
+                os.environ["IMAP_USE_SSL"] = "true" if imap_use_ssl else "false"
+                if not ENV_PATH.exists():
+                    ENV_PATH.write_text("", encoding="utf-8")
+                set_key(str(ENV_PATH), "IMAP_HOST", host_value)
+                set_key(str(ENV_PATH), "IMAP_PORT", str(int(imap_port)))
+                set_key(str(ENV_PATH), "IMAP_USERNAME", username_value)
+                set_key(str(ENV_PATH), "IMAP_FOLDER", folder_value)
+                set_key(str(ENV_PATH), "IMAP_QUERY", query_value)
+                set_key(str(ENV_PATH), "IMAP_USE_SSL", "true" if imap_use_ssl else "false")
+                if (imap_password or "").strip():
+                    os.environ["IMAP_PASSWORD"] = imap_password.strip()
+                    set_key(str(ENV_PATH), "IMAP_PASSWORD", imap_password.strip())
+                st.success("IMAP settings saved.")
+
+            if st.button("Test IMAP Connection", type="primary", use_container_width=True, key="onboard_enterprise_test_imap"):
+                try:
+                    from app.integrations.imap import ImapConfig, test_connection
+
+                    password_value = (imap_password or "").strip() or (os.getenv("IMAP_PASSWORD") or "").strip()
+                    cfg = ImapConfig(
+                        host=(imap_host or "").strip(),
+                        port=int(imap_port),
+                        username=(imap_username or "").strip(),
+                        password=password_value,
+                        folder=(imap_folder or "INBOX").strip() or "INBOX",
+                        query=(imap_query or "UNSEEN").strip() or "UNSEEN",
+                        use_ssl=bool(imap_use_ssl),
+                    )
+                    ok, message = test_connection(cfg)
+                    if ok:
+                        st.success("IMAP connected.")
+                        st.session_state.emails = load_emails()
+                    else:
+                        st.error(f"IMAP connection failed: {message}")
+                except Exception as e:
+                    st.error(f"IMAP connection failed: {e}")
+
         if selected_outbound == "smtp":
             st.caption("Set SMTP variables in `.env`: SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM.")
 
@@ -498,7 +617,14 @@ def render_onboarding():
         except Exception:
             policy_ok = False
 
-        mail_ok = selected_inbox_source != "gmail" or st.session_state.get("gmail_service") is not None
+        imap_cfg = get_imap_config()
+        imap_ok = bool(imap_cfg["host"] and imap_cfg["username"] and imap_cfg["password"])
+        if selected_inbox_source == "gmail":
+            mail_ok = st.session_state.get("gmail_service") is not None
+        elif selected_inbox_source == "imap":
+            mail_ok = imap_ok
+        else:
+            mail_ok = True
         db_ok = bool((db_value or "").strip())
         if selected_outbound == "gmail_api":
             outbound_ok = st.session_state.get("gmail_service") is not None
@@ -921,6 +1047,89 @@ def get_gmail_service_cached() -> object | None:
     return st.session_state.get("gmail_service")
 
 
+def _to_int(value, default: int) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
+def _to_bool(value, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
+
+
+def get_imap_config() -> dict:
+    """Load IMAP config from settings and environment."""
+    env_port = _to_int(os.getenv("IMAP_PORT", "993"), 993)
+    setting_port = get_setting("imap.port", env_port)
+    env_ssl = _to_bool(os.getenv("IMAP_USE_SSL", "true"), True)
+    setting_ssl = get_setting("imap.use_ssl", env_ssl)
+    return {
+        "host": (get_setting("imap.host", os.getenv("IMAP_HOST", "")) or "").strip(),
+        "port": _to_int(setting_port, 993),
+        "username": (get_setting("imap.username", os.getenv("IMAP_USERNAME", "")) or "").strip(),
+        "password": (os.getenv("IMAP_PASSWORD", "") or "").strip(),
+        "folder": (get_setting("imap.folder", os.getenv("IMAP_FOLDER", "INBOX")) or "INBOX").strip() or "INBOX",
+        "query": (get_setting("imap.query", os.getenv("IMAP_QUERY", "UNSEEN")) or "UNSEEN").strip() or "UNSEEN",
+        "use_ssl": _to_bool(setting_ssl, True),
+    }
+
+
+def load_imap_emails(max_results: int = 25) -> list[dict]:
+    """List IMAP messages as inbox items."""
+    from app.integrations.imap import ImapConfig, list_messages
+
+    cfg = get_imap_config()
+    if not cfg["host"] or not cfg["username"] or not cfg["password"]:
+        return []
+
+    imap_cfg = ImapConfig(
+        host=cfg["host"],
+        port=cfg["port"],
+        username=cfg["username"],
+        password=cfg["password"],
+        folder=cfg["folder"],
+        query=cfg["query"],
+        use_ssl=cfg["use_ssl"],
+    )
+    processed_ids = set(get_all_processed_email_ids())
+    claim_decisions = get_claim_decisions()
+
+    emails: list[dict] = []
+    try:
+        for msg in list_messages(imap_cfg, max_results=max_results):
+            is_processed = msg.email_id in processed_ids
+            decision = claim_decisions.get(msg.email_id)
+            emails.append(
+                {
+                    "file": "imap",
+                    "email_id": msg.email_id,
+                    "provider_message_id": msg.uid,
+                    "subject": msg.subject or "No subject",
+                    "from": msg.email_from or "Unknown",
+                    "date": msg.date or "Unknown",
+                    "body": (msg.body or "")[:200],
+                    "expected": "Unknown",
+                    "is_processed": is_processed,
+                    "decision": decision,
+                }
+            )
+    except Exception as e:
+        st.warning(f"Could not load IMAP inbox: {e}")
+
+    emails.sort(key=lambda x: (x["is_processed"], x["email_id"]))
+    return emails
+
+
 def load_gmail_emails(max_results: int = 25) -> list[dict]:
     """List Gmail messages as inbox items (metadata only)."""
     service = get_gmail_service_cached()
@@ -962,6 +1171,8 @@ def load_emails() -> list[dict]:
     src = get_email_source()
     if src == "gmail":
         return load_gmail_emails()
+    if src == "imap":
+        return load_imap_emails()
     return load_inbox_emails()
 
 
@@ -979,6 +1190,7 @@ def fetch_gmail_message_fields(message_id: str) -> dict:
     )
     return {
         "email_id": msg.message_id,
+        "email_source": "gmail",
         "email_from": msg.email_from,
         "email_to": msg.email_to,
         "email_subject": msg.subject,
@@ -987,6 +1199,53 @@ def fetch_gmail_message_fields(message_id: str) -> dict:
         "email_attachments": msg.attachments,
         "email_attachment_paths": msg.attachment_paths,
     }
+
+
+def fetch_imap_message_fields(email_id: str) -> dict:
+    cfg = get_imap_config()
+    from app.integrations.imap import ImapConfig, parse_imap_email_id, fetch_message
+
+    uid = parse_imap_email_id(email_id)
+    if not uid:
+        raise RuntimeError(f"Invalid IMAP email id: {email_id}")
+    if not cfg["host"] or not cfg["username"] or not cfg["password"]:
+        raise RuntimeError("IMAP is not configured.")
+
+    imap_cfg = ImapConfig(
+        host=cfg["host"],
+        port=cfg["port"],
+        username=cfg["username"],
+        password=cfg["password"],
+        folder=cfg["folder"],
+        query=cfg["query"],
+        use_ssl=cfg["use_ssl"],
+    )
+    msg = fetch_message(
+        imap_cfg,
+        uid,
+        download_attachments=True,
+        attachment_dir=OUTBOX_DIR / "attachments" / email_id,
+    )
+    return {
+        "email_id": msg.email_id,
+        "email_source": "imap",
+        "email_from": msg.email_from,
+        "email_to": msg.email_to,
+        "email_subject": msg.subject,
+        "email_date": msg.date,
+        "email_body": msg.body,
+        "email_attachments": msg.attachments,
+        "email_attachment_paths": msg.attachment_paths,
+    }
+
+
+def fetch_email_message_fields(email_id: str) -> dict:
+    src = get_email_source()
+    if src == "gmail":
+        return fetch_gmail_message_fields(email_id)
+    if src == "imap":
+        return fetch_imap_message_fields(email_id)
+    raise RuntimeError(f"Unsupported inbox source for direct fetch: {src}")
 
 
 def mark_gmail_processed(message_id: str) -> None:
@@ -1000,6 +1259,39 @@ def mark_gmail_processed(message_id: str) -> None:
         mark_message_read(service, message_id)
     except Exception as e:
         st.warning(f"Could not mark Gmail message as read: {e}")
+
+
+def mark_imap_processed(email_id: str) -> None:
+    """Mark an IMAP message as read after successful processing."""
+    cfg = get_imap_config()
+    if not cfg["host"] or not cfg["username"] or not cfg["password"]:
+        return
+    try:
+        from app.integrations.imap import ImapConfig, parse_imap_email_id, mark_message_read
+
+        uid = parse_imap_email_id(email_id)
+        if not uid:
+            return
+        imap_cfg = ImapConfig(
+            host=cfg["host"],
+            port=cfg["port"],
+            username=cfg["username"],
+            password=cfg["password"],
+            folder=cfg["folder"],
+            query=cfg["query"],
+            use_ssl=cfg["use_ssl"],
+        )
+        mark_message_read(imap_cfg, uid)
+    except Exception as e:
+        st.warning(f"Could not mark IMAP message as read: {e}")
+
+
+def mark_source_email_processed(email_id: str, source: str | None = None) -> None:
+    src = (source or get_email_source() or "").strip().lower()
+    if src == "gmail":
+        mark_gmail_processed(email_id)
+    elif src == "imap":
+        mark_imap_processed(email_id)
 
 
 def run_workflow_to_review(email_id: str, email_data: dict | None = None):
@@ -1291,13 +1583,25 @@ def render_sidebar():
         st.markdown("---")
         st.markdown("### Inbox Source")
         current_source = get_email_source()
+        source_map = {
+            "Local (Demo)": "local",
+            "Gmail": "gmail",
+            "IMAP": "imap",
+        }
+        source_labels = list(source_map.keys())
+        current_idx = 0
+        for idx, label in enumerate(source_labels):
+            if source_map[label] == current_source:
+                current_idx = idx
+                break
+
         source_choice = st.selectbox(
             "Source",
-            ["Local (Demo)", "Gmail"],
-            index=0 if current_source != "gmail" else 1,
+            source_labels,
+            index=current_idx,
             key="inbox_source_select",
         )
-        new_source = "gmail" if source_choice == "Gmail" else "local"
+        new_source = source_map[source_choice]
         if new_source != current_source:
             set_setting("email.source", new_source)
             st.session_state.emails = load_emails()
@@ -1348,6 +1652,99 @@ def render_sidebar():
             if st.button("Refresh Inbox", use_container_width=True):
                 st.session_state.emails = load_emails()
                 st.rerun()
+        elif new_source == "imap":
+            st.caption("IMAP supports Outlook/Exchange Online (app password), Zoho, and other providers.")
+            imap_cfg = get_imap_config()
+
+            imap_host = st.text_input("IMAP host", value=imap_cfg["host"], key="sidebar_imap_host")
+            c_imap_1, c_imap_2 = st.columns(2)
+            with c_imap_1:
+                imap_port = st.number_input(
+                    "Port",
+                    min_value=1,
+                    max_value=65535,
+                    value=int(imap_cfg["port"]),
+                    step=1,
+                    key="sidebar_imap_port",
+                )
+            with c_imap_2:
+                imap_use_ssl = st.checkbox("Use SSL", value=bool(imap_cfg["use_ssl"]), key="sidebar_imap_use_ssl")
+
+            imap_username = st.text_input("Username / email", value=imap_cfg["username"], key="sidebar_imap_username")
+            imap_password = st.text_input(
+                "Password / app password",
+                value="",
+                type="password",
+                key="sidebar_imap_password",
+                help="Leave blank to keep existing IMAP_PASSWORD from your environment/.env.",
+            )
+            c_imap_3, c_imap_4 = st.columns(2)
+            with c_imap_3:
+                imap_folder = st.text_input("Folder", value=imap_cfg["folder"], key="sidebar_imap_folder")
+            with c_imap_4:
+                imap_query = st.text_input(
+                    "Query",
+                    value=imap_cfg["query"],
+                    key="sidebar_imap_query",
+                    help='Examples: UNSEEN | UNSEEN SUBJECT "claim"',
+                )
+
+            if st.button("Save IMAP", use_container_width=True, key="sidebar_save_imap"):
+                host_value = (imap_host or "").strip()
+                username_value = (imap_username or "").strip()
+                folder_value = (imap_folder or "INBOX").strip() or "INBOX"
+                query_value = (imap_query or "UNSEEN").strip() or "UNSEEN"
+                set_setting("imap.host", host_value)
+                set_setting("imap.port", int(imap_port))
+                set_setting("imap.username", username_value)
+                set_setting("imap.folder", folder_value)
+                set_setting("imap.query", query_value)
+                set_setting("imap.use_ssl", bool(imap_use_ssl))
+                os.environ["IMAP_HOST"] = host_value
+                os.environ["IMAP_PORT"] = str(int(imap_port))
+                os.environ["IMAP_USERNAME"] = username_value
+                os.environ["IMAP_FOLDER"] = folder_value
+                os.environ["IMAP_QUERY"] = query_value
+                os.environ["IMAP_USE_SSL"] = "true" if imap_use_ssl else "false"
+                if not ENV_PATH.exists():
+                    ENV_PATH.write_text("", encoding="utf-8")
+                set_key(str(ENV_PATH), "IMAP_HOST", host_value)
+                set_key(str(ENV_PATH), "IMAP_PORT", str(int(imap_port)))
+                set_key(str(ENV_PATH), "IMAP_USERNAME", username_value)
+                set_key(str(ENV_PATH), "IMAP_FOLDER", folder_value)
+                set_key(str(ENV_PATH), "IMAP_QUERY", query_value)
+                set_key(str(ENV_PATH), "IMAP_USE_SSL", "true" if imap_use_ssl else "false")
+                if (imap_password or "").strip():
+                    os.environ["IMAP_PASSWORD"] = imap_password.strip()
+                    set_key(str(ENV_PATH), "IMAP_PASSWORD", imap_password.strip())
+                st.success("IMAP settings saved.")
+
+            if st.button("Test IMAP", type="primary", use_container_width=True, key="sidebar_test_imap"):
+                try:
+                    from app.integrations.imap import ImapConfig, test_connection
+
+                    password_value = (imap_password or "").strip() or (os.getenv("IMAP_PASSWORD") or "").strip()
+                    cfg = ImapConfig(
+                        host=(imap_host or "").strip(),
+                        port=int(imap_port),
+                        username=(imap_username or "").strip(),
+                        password=password_value,
+                        folder=(imap_folder or "INBOX").strip() or "INBOX",
+                        query=(imap_query or "UNSEEN").strip() or "UNSEEN",
+                        use_ssl=bool(imap_use_ssl),
+                    )
+                    ok, message = test_connection(cfg)
+                    if ok:
+                        st.success("IMAP connected.")
+                        st.session_state.emails = load_emails()
+                    else:
+                        st.error(f"IMAP connection failed: {message}")
+                except Exception as e:
+                    st.error(f"IMAP connection failed: {e}")
+
+            if st.button("Refresh Inbox", use_container_width=True, key="sidebar_refresh_imap"):
+                st.session_state.emails = load_emails()
+                st.rerun()
 
         st.markdown("---")
         st.markdown("### Outbound Delivery")
@@ -1379,6 +1776,34 @@ def render_sidebar():
         if outbound_mode == "gmail_api":
             if st.session_state.get("gmail_service") is None:
                 st.caption("Gmail API mode requires a connected Gmail account.")
+                client_path, token_path = get_gmail_paths()
+                uploaded_secret = st.file_uploader(
+                    "Outbound Gmail client secrets JSON",
+                    type=["json"],
+                    key="outbound_gmail_client_secret_upload",
+                )
+                if uploaded_secret is not None:
+                    try:
+                        client_path.parent.mkdir(parents=True, exist_ok=True)
+                        client_path.write_bytes(uploaded_secret.getvalue())
+                        set_setting("gmail.client_secrets_path", str(client_path))
+                        st.success("Saved Gmail client secrets for outbound.")
+                    except Exception as e:
+                        st.error(f"Could not save client secrets: {e}")
+                if st.button("Connect Gmail For Outbound", type="primary", use_container_width=True):
+                    try:
+                        from app.integrations.gmail import get_gmail_service
+
+                        if not client_path.exists():
+                            st.error("Upload a Gmail client secrets JSON first.")
+                        else:
+                            service = get_gmail_service(client_path, token_path)
+                            st.session_state.gmail_service = service
+                            set_setting("gmail.token_path", str(token_path))
+                            st.success("Gmail connected for outbound.")
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"Gmail connection failed: {e}")
             else:
                 st.caption("Gmail API status: connected.")
         elif outbound_mode == "smtp":
@@ -1619,11 +2044,12 @@ def render_email_selection():
                              # The original `run_workflow_to_review` handles setting current_state and workflow_stage
                              with st.spinner("Analyzing claim..."):
                                  email_data = None
-                                 if get_email_source() == "gmail":
+                                 source = get_email_source()
+                                 if source in {"gmail", "imap"}:
                                      try:
-                                         email_data = fetch_gmail_message_fields(email["email_id"])
+                                         email_data = fetch_email_message_fields(email["email_id"])
                                      except Exception as e:
-                                         st.error(f"Could not fetch Gmail message: {e}")
+                                         st.error(f"Could not fetch {source.upper()} message: {e}")
                                          success = False
                                      else:
                                          success = run_workflow_to_review(email['email_id'], email_data=email_data)
@@ -1671,8 +2097,8 @@ def render_review_interface():
                     "timestamp": datetime.now().isoformat()
                 })
                 st.session_state.claim_decisions[state.get("email_id")] = triage_result
-                if get_email_source() == "gmail" and state.get("email_id"):
-                    mark_gmail_processed(state.get("email_id"))
+                if state.get("email_id"):
+                    mark_source_email_processed(state.get("email_id"), source=state.get("email_source"))
                 st.session_state.workflow_stage = "select"
                 st.session_state.current_state = None
                 st.success(f"Archived as {triage_result}")
@@ -1795,8 +2221,7 @@ def render_review_interface():
                                 "timestamp": datetime.now().isoformat()
                             })
                         st.session_state.claim_decisions[email_id_value] = "NON_CLAIM"
-                        if get_email_source() == "gmail":
-                            mark_gmail_processed(email_id_value)
+                        mark_source_email_processed(email_id_value, source=state.get("email_source"))
                     st.session_state.non_claim_drafts.pop(email_id, None)
                     st.session_state.current_state = None
                     st.session_state.workflow_stage = "select"
@@ -2038,8 +2463,7 @@ def complete_workflow_and_send():
             "timestamp": datetime.now().isoformat()
         })
         st.session_state.claim_decisions[email_id] = decision
-        if get_email_source() == "gmail":
-            mark_gmail_processed(email_id)
+        mark_source_email_processed(email_id, source=(final_state or {}).get("email_source"))
         if email_id in st.session_state.pending_dispatch:
             st.session_state.pending_dispatch.remove(email_id)
         return True

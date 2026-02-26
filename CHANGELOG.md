@@ -16,6 +16,9 @@ All notable repository-level changes are documented here.
 - Added product catalog management (`demo` vs `uploaded`) with schema validation and onboarding wiring.
 - Added enterprise onboarding checklist covering database path, mailbox, products, policies, outbound mode, and LLM mode.
 - Added `PRODUCTION_ONBOARDING.md` with phase-by-phase rollout instructions.
+- Added enterprise IMAP inbox support (Outlook/Exchange Online and other providers) with read-marking, attachment ingest, and onboarding/sidebar controls.
+- Added outbound sidebar Gmail-connection flow for teams using Gmail API send mode without Gmail as inbox source.
+- Added IMAP parsing unit tests and updated docs (`README`, `.env.example`, `ARCHITECTURE`, onboarding guide).
 
 ## 2026-02-25
 

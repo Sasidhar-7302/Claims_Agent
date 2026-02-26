@@ -15,6 +15,7 @@ This project is a human-in-the-loop warranty claims processing system.
 - `app/policy_manager.py`: policy document upload ingestion and index.json management.
 - `app/product_catalog.py`: product catalog path selection, load/save, schema validation.
 - `app/integrations/gmail.py`: Gmail OAuth + message fetch (inbound).
+- `app/integrations/imap.py`: generic IMAP inbox integration (Outlook/enterprise providers).
 - `app/integrations/outbound_email.py`: idempotent outbound dispatch via Gmail API or SMTP.
 
 ## Workflow Lifecycle
@@ -42,7 +43,7 @@ This project is a human-in-the-loop warranty claims processing system.
 ## Demo vs Live
 
 - Demo mode: deterministic triage/extraction/analysis, no external LLM required.
-- Live mode: connect a real mailbox (Gmail) and process real emails; upload policies for your products.
+- Live mode: connect a real mailbox (Gmail API or IMAP) and process real emails; upload policies for your products.
 
 ## Reliability Notes
 

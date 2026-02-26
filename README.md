@@ -39,13 +39,15 @@ streamlit run ui/streamlit_app.py
 On first run, the app opens a Setup Wizard:
 
 - Free Demo (Local): runs on `data/inbox` with deterministic heuristics (no external LLM required).
-- Enterprise Setup: configures database path, mailbox connection, product catalog source, policy source, and outbound delivery.
+- Enterprise Setup: configures database path, mailbox connection (Gmail or IMAP), product catalog source, policy source, and outbound delivery.
 
 You can switch modes later in the sidebar.
 
 Detailed guide: see `PRODUCTION_ONBOARDING.md`.
 
-## Gmail Connection
+## Mailbox Connections
+
+### Gmail API
 
 1. Create a Google Cloud OAuth client (installed app) and download the client secrets JSON.
 2. In the app sidebar, set Inbox Source to Gmail and upload the client secrets JSON.
@@ -54,6 +56,17 @@ Detailed guide: see `PRODUCTION_ONBOARDING.md`.
 Tokens and secrets are saved locally under `outbox/` and are ignored by git.
 
 When Gmail outbound mode is enabled in the sidebar, customer responses are also sent through the connected Gmail account.
+
+### IMAP (Outlook/Enterprise Providers)
+
+1. In the app sidebar, set Inbox Source to IMAP.
+2. Enter IMAP host, port, username, password/app-password, folder, and query.
+3. Click Save IMAP then Test IMAP.
+
+Typical host examples:
+- Outlook/Exchange Online: `outlook.office365.com`
+- Gmail IMAP: `imap.gmail.com` (with app password)
+- Zoho: `imap.zoho.com`
 
 ## Workflow
 
@@ -125,6 +138,7 @@ Use `.env` (copied from `.env.example`):
 - `PRODUCTS_FILE` (optional product catalog path override)
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_USE_TLS`, `SMTP_FROM` (if using SMTP outbound)
 - `EMAIL_FROM` (fallback sender identity)
+- `IMAP_HOST`, `IMAP_PORT`, `IMAP_USERNAME`, `IMAP_PASSWORD`, `IMAP_FOLDER`, `IMAP_QUERY`, `IMAP_USE_SSL` (if using IMAP inbox)
 
 ## Professional Repo Standards
 
