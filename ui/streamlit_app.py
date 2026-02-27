@@ -998,7 +998,9 @@ if "llm_error" not in st.session_state:
 if "non_claim_drafts" not in st.session_state:
     st.session_state.non_claim_drafts = {}
 if "outbound_mode" not in st.session_state:
-    st.session_state.outbound_mode = get_outbound_mode()
+    st.session_state.outbound_mode = (
+        (get_setting("email.outbound_mode", "manual") or "manual").strip().lower()
+    )
 
 
 def load_inbox_emails():
