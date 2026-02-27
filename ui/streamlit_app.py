@@ -953,11 +953,18 @@ if "product_env_applied" not in st.session_state:
     apply_product_source(get_setting("product.source", "demo") or "demo")
     st.session_state.product_env_applied = True
 
-if get_email_source() == "gmail" and st.session_state.get("gmail_service") is None:
+_startup_email_source = (get_setting("email.source", "local") or "local").strip().lower()
+if _startup_email_source == "gmail" and st.session_state.get("gmail_service") is None:
     try:
         from app.integrations.gmail import get_gmail_service
 
-        client_path, token_path = get_gmail_paths()
+        secrets_dir = OUTBOX_DIR / "secrets"
+        client_path = Path(
+            get_setting("gmail.client_secrets_path", str(secrets_dir / "gmail_client_secret.json"))
+        )
+        token_path = Path(
+            get_setting("gmail.token_path", str(secrets_dir / "gmail_token.json"))
+        )
         if client_path.exists() and token_path.exists():
             st.session_state.gmail_service = get_gmail_service(client_path, token_path)
     except Exception:
